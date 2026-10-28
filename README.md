@@ -6,8 +6,8 @@ A realistic snooker game for the Meta Quest 3 that runs straight from the browse
 
 - **Physics:** stun, screw, side, swerve and massé; cushions with proper jaws; balls that drop into the pocket nets. The cue can't pass through balls or the cushion rail, so a ball tight on a cushion can only be struck high, as in the real game.
 - **Rules:** full professional rules, including foul and a miss, free balls, touching ball, push strokes, re-spotted black and colour nomination, with a referee who calls the score.
-- **Opponents:** eight computer players, from pub regular to world champion. The weakest go for the easiest pot and miss plenty; the best pot reliably, play safe, escape snookers and think two shots ahead for position.
-- **Championship:** an 8-player championship played in an arena with a crowd, applause and a live scoreboard.
+- **Opponents:** 24 computer players, from pub regular to snooker legend. The weakest go for the easiest pot and miss plenty; the best pot reliably, play safe, escape snookers and think two shots ahead for position.
+- **Championship:** an 8- or 16-player championship with an amateur or pro field, played in an arena with a crowd, applause and a live scoreboard, and a trophy for the winner.
 - **Coach:** seven lessons (cue-ball control, cut angles, doubles, one- and two-cushion escapes, swerve and the break-off), plus a tip for any position in practice.
 - **Venues:** a snooker club with a bar and trophy cabinet, the championship arena, or your own room in passthrough.
 

@@ -33,7 +33,10 @@
   }
   #panel.collapsed > :not(header) { display: none; }
   header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-  .calllog { margin: 0; padding-left: 0; list-style: none; font-size: 13px; color: var(--muted, #9fb2a8); max-height: 9.5em; overflow-y: auto; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 4px; }
+  .tabs button { padding: 6px 10px; font-size: 13px; }
+  #drawList { white-space: pre; font-size: 13px; line-height: 1.5; }
+  .calllog { margin: 0 0 10px; padding-left: 0; list-style: none; font-size: 13px; color: var(--muted, #9fb2a8); }
   .calllog li { padding: 2px 0; border-bottom: 1px solid rgba(233,239,233,0.06); }
   .calllog li:first-child { color: var(--chalk, #e9efe9); }
   .build { font-size: 12px; color: var(--muted, #9fb2a8); margin-top: 4px; letter-spacing: 0.04em; }
@@ -135,32 +138,40 @@
     <p id="xrNote">Open this page in the Quest browser to play in passthrough. On a computer you can practise with the mouse.</p>
   </div>
 
-  <section>
+  <nav class="tabs" id="paneTabs">
+    <button data-pane="play" class="on">Play</button><button data-pane="table">Table</button><button data-pane="coach">Coach</button>
+    <button data-pane="draw">Draw</button><button data-pane="log">Log</button><button data-pane="help">Help</button>
+  </nav>
+
+  <section class="pane" data-pane="play">
     <h2>Play</h2>
     <div class="rows" id="playRows"></div>
   </section>
 
-  <section>
-    <h2>Coach</h2>
-    <div class="rows" id="coachRows"></div>
-  </section>
-
-  <section id="drawSection" hidden>
-    <h2>Championship draw</h2>
-    <div id="drawList"></div>
-  </section>
-
-  <section>
+  <section class="pane" data-pane="table" hidden>
     <h2>Table and cue</h2>
     <div class="rows" id="tableRows"></div>
   </section>
 
-  <section>
-    <h2>Recent calls</h2>
-    <ol class="calllog" id="callLog"></ol>
+  <section class="pane" data-pane="coach" hidden>
+    <h2>Coach</h2>
+    <div class="rows" id="coachRows"></div>
   </section>
 
-  <section>
+  <section class="pane" data-pane="draw" hidden>
+    <h2>Championship draw</h2>
+    <div id="drawList"></div>
+    <p id="drawNone">No championship in progress. Start one from the Play tab.</p>
+    <button id="abandonChamp" hidden>Abandon this championship</button>
+  </section>
+
+  <section class="pane" data-pane="log" hidden>
+    <h2>The referee's recent calls</h2>
+    <ol class="calllog" id="callLog"></ol>
+    <button id="clearLog">Clear</button>
+  </section>
+
+  <section class="pane" data-pane="help" hidden>
     <h2>Quest controls</h2>
     <dl>
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
@@ -175,7 +186,7 @@
     </dl>
   </section>
 
-  <section>
+  <section class="pane" data-pane="help" hidden>
     <h2>Desktop controls (mouse and keyboard)</h2>
     <dl>
       <dt>Mouse</dt><dd>Point to aim; hold Shift and move for fine aim</dd>
@@ -267,16 +278,35 @@ const MAX_BALL_SPEED = 9;
 // think: 0 = goes for the easiest pot with no thought for position; 1 = plays for position on the next ball;
 // 2 = thinks two shots ahead, like a professional
 const AI_PLAYERS = [
-  { name: 'Dave Hart',       title: 'Pub regular',          aim: 0.65, speed: 0.18, cands: 2, speeds: [1.5],          spins: [0],              position: 0,   safety: 0,   attack: 0,    think: 0, rating: 1000 },
-  { name: 'Shirley Brooks',  title: 'Club player',          aim: 0.45, speed: 0.14, cands: 3, speeds: [1.3, 2.1],     spins: [0, 0.35],        position: 0, safety: 0,   attack: 0,    think: 0, rating: 1150 },
-  { name: 'Kev Dunmore',     title: 'League stalwart',      aim: 0.32, speed: 0.12, cands: 3, speeds: [1.3, 2.1],     spins: [-0.45, 0, 0.35], position: 0.5, safety: 0.4, attack: 0.2, think: 1, rating: 1300 },
-  { name: 'Priya Lal',       title: 'County champion',      aim: 0.22, speed: 0.10, cands: 4, speeds: [1.2, 1.9, 2.9], spins: [-0.45, 0, 0.35], position: 0.7, safety: 0.6, attack: 0.25, think: 1, rating: 1450 },
-  { name: 'Tommy Moran',     title: 'Semi-professional',    aim: 0.15, speed: 0.08, cands: 5, speeds: [1.2, 1.9, 2.9], spins: [-0.55, -0.2, 0.4], position: 0.85, safety: 0.75, attack: 0.3, think: 1, rating: 1600 },
-  { name: 'Lin Wei',         title: 'Touring professional', aim: 0.10, speed: 0.06, cands: 5, speeds: [1.2, 1.9, 2.9], spins: [-0.55, -0.2, 0.4], position: 1,   safety: 0.9, attack: 0.34, think: 2, rating: 1750 },
-  { name: 'Alastair Grieve', title: 'Ranking event winner', aim: 0.07, speed: 0.05, cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1, safety: 1, attack: 0.37, think: 2, rating: 1900 },
-  { name: 'Marcus Vale',     title: 'World champion',       aim: 0.045, speed: 0.04, cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1, safety: 1, attack: 0.4, think: 2, rating: 2050 },
+  { name: 'Dave Hart',        title: 'Pub regular',               aim: 0.65,  speed: 0.18,  cands: 2, speeds: [1.5],            spins: [0],                position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, rating: 1000 },
+  { name: 'Bob Ackland',      title: 'Social club member',        aim: 0.6,   speed: 0.17,  cands: 2, speeds: [1.5],            spins: [0],                position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, rating: 1040 },
+  { name: 'Gary Pike',        title: 'Pub league player',         aim: 0.55,  speed: 0.16,  cands: 2, speeds: [1.3, 2.1],       spins: [0],                position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, rating: 1080 },
+  { name: 'Tracy Gill',       title: 'Pub team captain',          aim: 0.5,   speed: 0.15,  cands: 2, speeds: [1.3, 2.1],       spins: [0],                position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, rating: 1115 },
+  { name: 'Shirley Brooks',   title: 'Club player',               aim: 0.45,  speed: 0.14,  cands: 3, speeds: [1.3, 2.1],       spins: [0, 0.35],          position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, rating: 1150 },
+  { name: 'Imran Qadir',      title: 'Club handicap winner',      aim: 0.415, speed: 0.135, cands: 3, speeds: [1.3, 2.1],       spins: [0, 0.35],          position: 0.15,  safety: 0.1,   attack: 0.05,  think: 0, rating: 1190 },
+  { name: 'Owen Thackeray',   title: 'Club captain',              aim: 0.38,  speed: 0.13,  cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.3,   safety: 0.2,   attack: 0.1,   think: 1, rating: 1230 },
+  { name: 'Neil Furness',     title: 'League player',             aim: 0.35,  speed: 0.125, cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.4,   safety: 0.3,   attack: 0.15,  think: 1, rating: 1265 },
+  { name: 'Kev Dunmore',      title: 'League stalwart',           aim: 0.32,  speed: 0.12,  cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.5,   safety: 0.4,   attack: 0.2,   think: 1, rating: 1300 },
+  { name: 'Paddy Corrigan',   title: 'Club champion',             aim: 0.295, speed: 0.115, cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.55,  safety: 0.45,  attack: 0.21,  think: 1, rating: 1340 },
+  { name: 'Sanjay Bhalla',    title: 'Regional champion',         aim: 0.27,  speed: 0.11,  cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.6,   safety: 0.5,   attack: 0.22,  think: 1, rating: 1380 },
+  { name: 'Ffion Pryce',      title: "Women's tour player",       aim: 0.245, speed: 0.105, cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.65,  safety: 0.55,  attack: 0.235, think: 1, rating: 1415 },
+  { name: 'Priya Lal',        title: 'County champion',           aim: 0.22,  speed: 0.1,   cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.7,   safety: 0.6,   attack: 0.25,  think: 1, rating: 1450 },
+  { name: 'Lewis Ambrose',    title: 'Junior international',      aim: 0.2,   speed: 0.095, cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.75,  safety: 0.65,  attack: 0.265, think: 1, rating: 1490 },
+  { name: 'Megan Tolley',     title: 'National amateur champion', aim: 0.18,  speed: 0.09,  cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 0.8,   safety: 0.7,   attack: 0.28,  think: 1, rating: 1530 },
+  { name: 'Tariq Haddad',     title: 'Amateur international',     aim: 0.165, speed: 0.085, cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 0.825, safety: 0.725, attack: 0.29,  think: 1, rating: 1565 },
+  { name: 'Tommy Moran',      title: 'Semi-professional',         aim: 0.15,  speed: 0.08,  cands: 5, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 0.85,  safety: 0.75,  attack: 0.3,   think: 1, rating: 1600 },
+  { name: 'Callum Fraine',    title: 'Tour qualifier',            aim: 0.12,  speed: 0.07,  cands: 5, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 0.95,  safety: 0.85,  attack: 0.32,  think: 2, rating: 1680 },
+  { name: 'Lin Wei',          title: 'Touring professional',      aim: 0.1,   speed: 0.06,  cands: 5, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 0.9,   attack: 0.34,  think: 2, rating: 1750 },
+  { name: 'Rhys Penhallow',   title: 'Top-32 professional',       aim: 0.085, speed: 0.055, cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 0.95,  attack: 0.35,  think: 2, rating: 1820 },
+  { name: 'Alastair Grieve',  title: 'Ranking event winner',      aim: 0.07,  speed: 0.05,  cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.37,  think: 2, rating: 1900 },
+  { name: 'Josie Achterberg', title: 'Top-16 professional',       aim: 0.057, speed: 0.045, cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.38,  think: 2, rating: 1970 },
+  { name: 'Marcus Vale',      title: 'World champion',            aim: 0.045, speed: 0.04,  cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.4,   think: 2, rating: 2050 },
+  { name: 'Declan Royle',     title: 'Snooker legend',            aim: 0.036, speed: 0.035, cands: 7, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.42,  think: 2, rating: 2120 },
 ];
-const ROUND_NAMES = ['Quarter-final', 'Semi-final', 'Final'];
+const ROUND_NAMES = ['Last 16', 'Quarter-final', 'Semi-final', 'Final'];
+// A championship of 8 has three rounds and one of 16 has four; rounds are named counting back from the final
+const champRounds = () => Math.log2((champ && champ.size) || 8);
+const roundName = r => ROUND_NAMES[ROUND_NAMES.length - champRounds() + r];
 
 // =====================================================================
 //  Settings (remembered in this browser only)
@@ -284,22 +314,28 @@ const ROUND_NAMES = ['Quarter-final', 'Semi-final', 'Final'];
 const DEFAULTS = {
   mode: 'practice', aim: true, pockets: 'standard', power: 1.3, bridge: 0.25,
   hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, legs: true, sound: true, tableY: 0.76,
-  opponent: 2, bestOf: 3, reds: 15, champLevel: 'amateur', champLength: 'short',
+  opponent: 8, bestOf: 3, reds: 15, champLevel: 'amateur', champLength: 'short', champSize: 16,
   referee: 'male', coachVoice: 'male', hands: 'medium', figure: true, rules: 'pro',
 };
 let settings = { ...DEFAULTS };
-try { Object.assign(settings, JSON.parse(localStorage.getItem('desk-snooker') || '{}')); } catch (e) { /* storage blocked */ }
+let savedSettings = {};
+try { savedSettings = JSON.parse(localStorage.getItem('desk-snooker') || '{}') || {}; Object.assign(settings, savedSettings); } catch (e) { /* storage blocked */ }
 if (settings.mode === 'match') settings.mode = 'two';
 if (settings.referee === true) settings.referee = 'male'; else if (settings.referee === false) settings.referee = 'off';
+// The original eight players are still here, among new ones: keep the same opponent
+const FIRST_EIGHT = ['Dave Hart', 'Shirley Brooks', 'Kev Dunmore', 'Priya Lal', 'Tommy Moran', 'Lin Wei', 'Alastair Grieve', 'Marcus Vale'];
+if ('opponent' in savedSettings && !savedSettings.players24) settings.opponent = Math.max(0, AI_PLAYERS.findIndex(p => p.name === FIRST_EIGHT[savedSettings.opponent]));
+settings.players24 = 1;
 if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; settings.venues = 1; }   // the arena arrived later
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 34;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 35;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
 try { champ = JSON.parse(localStorage.getItem('desk-snooker-champ') || 'null'); } catch (e) { champ = null; }
+if (champ && !champ.size) { champ.size = 8; champ.entrants.forEach(e => { if (e.ai !== null) e.ai = AI_PLAYERS.findIndex(p => p.name === e.name); }); }   // from before the new players
 function saveChamp() { try { localStorage.setItem('desk-snooker-champ', JSON.stringify(champ)); } catch (e) { /* ignore */ } }
 
 // =====================================================================
@@ -1346,7 +1382,7 @@ function drawArenaScreen() {
   g.fillStyle = '#07080b'; g.fillRect(0, 0, w, h);
   g.fillStyle = '#c8102e'; g.fillRect(0, 0, w, 90);
   g.fillStyle = '#ffffff'; g.font = '800 58px "Big Shoulders Display", sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'left';
-  const round = settings.mode === 'champ' && champ ? ROUND_NAMES[champ.round].toUpperCase() : 'MATCH';
+  const round = settings.mode === 'champ' && champ ? roundName(champ.round).toUpperCase() : 'MATCH';
   g.fillText(`DESK SNOOKER CHAMPIONSHIP · ${round}`, 40, 48);
   g.textAlign = 'right'; g.fillText(`BEST OF ${match.bestOf}`, w - 40, 48);
   [0, 1].forEach(i => {
@@ -1404,6 +1440,57 @@ function drawArenaScreen() {
   }
 }
 mergeStatic(arena, null);
+
+// ---------- the trophy, for winning the championship ----------
+// It rises out of the middle of the table and turns slowly in a pool of light until the next frame starts
+const trophy = (() => {
+  const group = new THREE.Group(); group.visible = false; scene.add(group);
+  // Its own reflections, as if under showroom lights, so the gold looks like gold whatever the room
+  const studio = new THREE.Scene();
+  studio.add(new THREE.Mesh(new THREE.BoxGeometry(6, 4, 6), new THREE.MeshBasicMaterial({ color: 0x4a3c30, side: THREE.BackSide })));
+  const bright = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.96, 0.88).multiplyScalar(5), side: THREE.DoubleSide });
+  for (const [x, y, z, ry] of [[0, 1.9, 0, 0], [2.9, 0.8, 0, Math.PI / 2], [-2.9, 0.5, 1, Math.PI / 2], [0, 0.6, 2.9, 0]]) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.0), bright); m.position.set(x, y, z); if (y > 1.5) m.rotation.x = Math.PI / 2; else m.rotation.y = ry; studio.add(m);
+  }
+  const gold = new THREE.MeshStandardMaterial({ color: 0xffcf5c, roughness: 0.14, metalness: 1, envMap: pmrem.fromScene(studio, 0.02).texture, envMapIntensity: 1.2 });
+  const spin = new THREE.Group(); group.add(spin);
+  // A tall cup: domed foot, slim stem with a knot, and a deep bowl flaring to a rolled rim
+  const cup = new THREE.LatheGeometry([[0, 0], [0.075, 0], [0.075, 0.012], [0.055, 0.03], [0.022, 0.06], [0.016, 0.13], [0.03, 0.145], [0.016, 0.16],
+    [0.02, 0.19], [0.05, 0.215], [0.075, 0.26], [0.088, 0.33], [0.095, 0.4], [0.104, 0.43], [0.098, 0.438], [0.088, 0.41], [0, 0.39]].map(([r, y]) => new THREE.Vector2(r, y)), 48);
+  const body = new THREE.Mesh(cup, gold); body.position.y = 0.09; spin.add(body);
+  for (const sg of [1, -1]) {
+    const h = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.009, 10, 24, Math.PI), gold);
+    h.rotation.z = -sg * Math.PI / 2; h.position.set(sg * 0.085, 0.42, 0); spin.add(h);
+  }
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.22), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.3, metalness: 0.2, envMap: roomEnv }));
+  plinth.position.y = 0.045; spin.add(plinth);
+  // A plaque on each side of the plinth
+  const plaque = paintTexture(512, 192, (g, w, h) => {
+    g.fillStyle = '#c9a24a'; g.fillRect(0, 0, w, h); g.strokeStyle = '#6a4c12'; g.lineWidth = 8; g.strokeRect(8, 8, w - 16, h - 16);
+    g.fillStyle = '#3a2808'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '800 64px "Big Shoulders Display", Georgia, serif'; g.fillText('CHAMPION', w / 2, 70);
+    g.font = '600 34px "Big Shoulders Display", Georgia, serif'; g.fillText('DESK SNOOKER CHAMPIONSHIP', w / 2, 140);
+  });
+  for (let i = 0; i < 4; i++) {
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.06), new THREE.MeshBasicMaterial({ map: plaque }));
+    p.rotation.y = i * Math.PI / 2; p.position.set(Math.sin(i * Math.PI / 2) * 0.1105, 0.045, Math.cos(i * Math.PI / 2) * 0.1105); spin.add(p);
+  }
+  const pool = lightPool(1.4, 1.4, 0xfff0c8, 0.6); pool.rotation.x = -Math.PI / 2; pool.position.y = 0.004; group.add(pool);
+  return { group, spin, t: -1 };
+})();
+function showTrophy() { trophy.t = 0; trophy.group.visible = true; applause(8, 1); }
+function hideTrophy() { trophy.t = -1; trophy.group.visible = false; }
+function updateTrophy(dt) {
+  if (trophy.t < 0) return;
+  trophy.t += dt;
+  const rise = 1 - Math.pow(1 - Math.min(1, trophy.t / 2.5), 3);        // eases up out of the table over a couple of seconds
+  table.updateMatrixWorld();
+  trophy.group.position.copy(table.localToWorld(new THREE.Vector3(0, 0, 0)));
+  trophy.group.quaternion.copy(table.quaternion);
+  trophy.spin.position.y = -0.6 + rise * 0.78;                          // floats just clear of the balls
+  trophy.spin.visible = trophy.spin.position.y > -0.55;
+  trophy.spin.rotation.y = trophy.t * 0.5;
+}
 
 // Which venue we're in: the club, or (by default, for the championship) the arena; nothing in passthrough
 let arActive = false;
@@ -1911,6 +1998,21 @@ function ballOnText() {
   if (game.ballOn === 'colour') return game.nominated ? `${cap(game.nominated.name)} (nominated)` : 'Any colour';
   return game.ballOn > 7 ? '—' : cap(nameOf(game.ballOn));
 }
+// The panel's tabs on the screen (the headset menu has the same ones)
+function showPane(id) {
+  document.querySelectorAll('#paneTabs button').forEach(b => b.classList.toggle('on', b.dataset.pane === id));
+  document.querySelectorAll('section.pane').forEach(sec => { sec.hidden = sec.dataset.pane !== id; });
+  try { localStorage.setItem('desk-snooker-pane', id); } catch (e) { /* storage blocked */ }
+}
+// Give up on a championship: it's removed, and you're back in practice
+function abandonChampionship() {
+  champ = null; saveChamp(); hideTrophy();
+  if (settings.mode === 'champ') setMode('practice');
+  renderDraw(); drawMenu(); renderSettingsPanel();
+  setMessage('Championship abandoned.');
+}
+function clearCallLog() { callLog.length = 0; renderCallLog(); try { if (menuPage === 'log' && menuOpen) drawMenu(); } catch (e) { /* not set up yet */ } }
+
 // The referee's recent calls, newest first, so you can look back at what happened
 const callLog = [];
 function setMessage(m) {
@@ -2064,6 +2166,7 @@ function startMatch() {
 
 function newFrame() {
   cancelAI();
+  if (typeof hideTrophy === 'function') hideTrophy();
   rack();
   undoStack = []; shot = null;
   game.players.forEach(p => { p.score = 0; p.misses = 0; });
@@ -2126,7 +2229,7 @@ function showStats(msg) {
     const next = champMatch();
     if (next) {
       const opp = champ.entrants[next.a === champ.you ? next.b : next.a].name;
-      buttons.push({ t: `Next round: ${ROUND_NAMES[champ.round].toLowerCase()} v ${opp}`, act: () => { setChoice(null); continueAfterFrame(); } });
+      buttons.push({ t: `Next round: ${roundName(champ.round).toLowerCase()} v ${opp}`, act: () => { setChoice(null); continueAfterFrame(); } });
     } else {
       buttons.push({ t: 'See the championship draw', act: () => { setChoice(null); if (renderer.xr.isPresenting) { menuPage = 'draw'; toggleMenu(true); } else document.getElementById('drawSection').scrollIntoView(); } });
       buttons.push({ t: 'New championship', act: () => { setChoice(null); newChampionship(); } });
@@ -2375,19 +2478,26 @@ function endOfFrameScores(prefix) {
 //  Championship – an eight-player knockout
 // =====================================================================
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
-function champBestOf(round) { return (settings.champLength === 'long' ? [3, 3, 5] : [1, 1, 3])[round] || 1; }
+// Matches get longer towards the final: counted back from it
+function champBestOf(round) {
+  const fromEnd = champRounds() - 1 - round, long = (champ && champ.length || settings.champLength) === 'long';
+  return fromEnd === 0 ? (long ? 5 : 3) : (long ? 3 : 1);
+}
 
 function newChampionship() {
-  const field = settings.champLevel === 'pro' ? [1, 2, 3, 4, 5, 6, 7] : [0, 1, 2, 3, 4, 5, 6];
+  // The field: the weakest (amateur) or strongest (pro) of the computer players, enough to fill the draw
+  const size = +settings.champSize === 8 ? 8 : 16, n = AI_PLAYERS.length;
+  const field = Array.from({ length: size - 1 }, (_, i) => settings.champLevel === 'pro' ? n - size + 1 + i : i);
   const entrants = shuffle([{ name: 'You', ai: null }, ...field.map(i => ({ name: AI_PLAYERS[i].name, ai: i }))]);
   const you = entrants.findIndex(e => e.ai === null);
   const first = [];
-  for (let i = 0; i < 8; i += 2) first.push({ a: i, b: i + 1, fa: 0, fb: 0, winner: null });
-  champ = { entrants, you, round: 0, rounds: [first], champion: null, curFrames: [0, 0], length: settings.champLength };
+  for (let i = 0; i < size; i += 2) first.push({ a: i, b: i + 1, fa: 0, fb: 0, winner: null });
+  champ = { size, entrants, you, round: 0, rounds: [first], champion: null, curFrames: [0, 0], length: settings.champLength };
   saveChamp();
   settings.mode = 'champ'; saveSettings();
   startMatch();
-  setMessage(`${ROUND_NAMES[0]} against ${game.players[1].name}. You break.`);
+  setMessage(`${roundName(0)} against ${game.players[1].name}. You break.`);
+  renderDraw();
 }
 
 function champMatch() {
@@ -2411,7 +2521,7 @@ function champFinishRound() {
     [m.fa, m.fb] = simFrames(m.a, m.b, champBestOf(champ.round));
     m.winner = m.fa > m.fb ? m.a : m.b;
   }
-  if (champ.round === 2) { champ.champion = round[0].winner; return; }
+  if (champ.round === champRounds() - 1) { champ.champion = round[0].winner; return; }
   const next = [];
   for (let i = 0; i < round.length; i += 2) next.push({ a: round[i].winner, b: round[i + 1].winner, fa: 0, fb: 0, winner: null });
   champ.rounds.push(next); champ.round++;
@@ -2428,24 +2538,24 @@ function champRecordResult(w, msg) {
   champFinishRound();
   if (!youWon) while (champ.champion === null) champFinishRound();
   saveChamp(); renderDraw();
-  if (champ.champion === champ.you) return `${msg} You are the champion!`;
+  if (champ.champion === champ.you) { showTrophy(); return `${msg} You are the champion!`; }
   if (!youWon) return `${msg} You're out. ${champ.entrants[champ.champion].name} won the championship.`;
   const next = champMatch();
   const opp = champ.entrants[next.a === champ.you ? next.b : next.a].name;
-  return `${msg} Through to the ${ROUND_NAMES[champ.round].toLowerCase()} against ${opp}. Press A (or C) to play.`;
+  return `${msg} Through to the ${roundName(champ.round).toLowerCase()} against ${opp}. Press A (or C) to play.`;
 }
 
 function champSummary() {
   if (!champ) return 'No championship in progress.';
   if (champ.champion !== null) return `${champ.entrants[champ.champion].name === 'You' ? 'You are' : champ.entrants[champ.champion].name + ' is'} the champion. Choose New championship to play again.`;
-  return `${ROUND_NAMES[champ.round]} in progress.`;
+  return `${roundName(champ.round)} in progress.`;
 }
 
 function drawLines() {
   if (!champ) return [];
   const lines = [];
   champ.rounds.forEach((round, r) => {
-    lines.push({ head: ROUND_NAMES[r] + (r === champ.round && champ.champion === null ? '' : '') });
+    lines.push({ head: roundName(r) });
     for (const m of round) {
       const na = champ.entrants[m.a].name, nb = champ.entrants[m.b].name;
       const score = m.winner === null ? 'v' : `${m.fa}–${m.fb}`;
@@ -2456,10 +2566,11 @@ function drawLines() {
   return lines;
 }
 function renderDraw() {
-  const sec = document.getElementById('drawSection');
-  if (!sec) return;
-  sec.hidden = !champ;
-  document.getElementById('drawList').textContent = drawLines().map(l => l.head ? `\n${l.head.toUpperCase()}` : `${l.you ? '▸ ' : '  '}${l.text}`).join('\n').trim();
+  const list = document.getElementById('drawList');
+  if (!list) return;
+  document.getElementById('drawNone').hidden = !!champ;
+  document.getElementById('abandonChamp').hidden = !champ;
+  list.textContent = drawLines().map(l => l.head ? `\n${l.head.toUpperCase()}` : `${l.you ? '▸ ' : '  '}${l.text}`).join('\n').trim();
 }
 
 // =====================================================================
@@ -3196,7 +3307,7 @@ function refreshBoard() {
     });
     if (match.bestOf > 1 || settings.mode === 'champ') {
       g.fillStyle = '#9fb2a8'; g.font = `600 26px ${FONT}`; g.textAlign = 'right';
-      g.fillText(`${settings.mode === 'champ' && champ ? ROUND_NAMES[champ.round].toUpperCase() + ' · ' : ''}BEST OF ${match.bestOf}`, 990, 124);
+      g.fillText(`${settings.mode === 'champ' && champ ? roundName(champ.round).toUpperCase() + ' · ' : ''}BEST OF ${match.bestOf}`, 990, 124);
       g.textAlign = 'left';
     }
   } else {
@@ -3287,9 +3398,11 @@ const playRows = [
 
     { t: () => settings.figure ? "Opponent's hands on" : "Opponent's hands off", on: () => settings.figure, act: () => { settings.figure = !settings.figure; } },
   ] },
-  { label: 'Champ. length', btns: [
-    { t: () => 'Short (1, 1, 3)', on: () => settings.champLength === 'short', act: () => { settings.champLength = 'short'; } },
-    { t: () => 'Long (3, 3, 5)', on: () => settings.champLength === 'long', act: () => { settings.champLength = 'long'; } },
+  { label: 'Champ. format', btns: [
+    { t: () => '8 players', on: () => +settings.champSize === 8, act: () => { settings.champSize = 8; } },
+    { t: () => '16 players', on: () => +settings.champSize !== 8, act: () => { settings.champSize = 16; } },
+    { t: () => 'Short matches', on: () => settings.champLength === 'short', act: () => { settings.champLength = 'short'; } },
+    { t: () => 'Long matches', on: () => settings.champLength === 'long', act: () => { settings.champLength = 'long'; } },
   ] },
 ];
 const tableRows = [
@@ -3360,7 +3473,7 @@ function LESSONS_MENU() {
 const menu = makePanel(1024, 1300, 0.64);
 menu.mesh.visible = false;
 scene.add(menu.mesh);
-let menuOpen = false, menuHover = null, menuPage = 'play';
+let menuOpen = false, menuHover = null, menuPage = 'play', menuConfirm = null;
 const menuHits = [];
 function drawMenu() {
   const { g, c } = menu;
@@ -3410,7 +3523,7 @@ function drawMenu() {
   }
   // Tabs
   MENU_PAGES.forEach((p, i) => {
-    const tab = { act: () => { menuPage = p.id; }, tab: true };
+    const tab = { act: () => { menuPage = p.id; menuConfirm = null; }, tab: true };
     tab.key = p.id;
     const tw = (944 - 12 * (MENU_PAGES.length - 1)) / MENU_PAGES.length;
     button(tab, 40 + i * (tw + 12), 104, tw, 64, p.label, menuPage === p.id);   // tabs on their own line under the title
@@ -3419,14 +3532,18 @@ function drawMenu() {
   if (menuPage === 'log') {
     g.fillStyle = '#d4a94f'; g.font = `600 34px ${FONT}`; g.fillText("THE REFEREE'S RECENT CALLS", 40, y + 26); y += 70;
     if (!callLog.length) { g.fillStyle = '#9fb2a8'; g.font = `400 28px ${BODY}`; g.fillText('Nothing yet.', 40, y); }
+    if (callLog.length) button({ act: clearCallLog }, 40, c.height - 196, 944, 72, 'Clear the log', false);
     for (const c of callLog) {
-      if (y > c.height - 170) break;
+      if (y > c.height - 250) break;
       g.fillStyle = '#9fb2a8'; g.font = `400 24px ${BODY}`; g.fillText(c.at.toTimeString().slice(0, 5), 40, y);
       g.fillStyle = '#e9efe9'; g.font = `400 26px ${BODY}`;
       y = wrapText(g, c.text, 130, y, 854, 32, 3) + 46;
     }
   } else if (menuPage === 'draw') {
     const lines = drawLines();
+    // A second press confirms, so it can't happen by accident
+    if (champ) button({ act: () => { if (menuConfirm === 'abandon') { menuConfirm = null; abandonChampionship(); } else menuConfirm = 'abandon'; } },
+      40, c.height - 196, 944, 72, menuConfirm === 'abandon' ? 'Press again to abandon the championship' : 'Abandon this championship', menuConfirm === 'abandon');
     if (!lines.length) { g.fillStyle = '#9fb2a8'; g.font = `400 30px ${BODY}`; g.fillText('No championship yet. Start one from the Play tab.', 40, y + 30); }
     for (const l of lines) {
       if (l.head) { g.fillStyle = '#d4a94f'; g.font = `600 36px ${FONT}`; g.fillText(l.head.toUpperCase(), 40, y + 30); y += 56; }
@@ -4179,7 +4296,7 @@ async function loadModels() {
 //  The coach: lessons with guides and demonstrations, and tips in practice
 // =====================================================================
 const COACH_LINES = (() => { try { return JSON.parse(atob(document.getElementById('asset-coach-lines').textContent.trim())); } catch (e) { return {}; } })();
-const COACH_PROFILE = { ...AI_PLAYERS[7], aim: 0.03, attack: 0.3 };
+const COACH_PROFILE = { ...AI_PLAYERS.find(p => p.title === 'World champion'), aim: 0.03, attack: 0.3 };
 const coach = { mode: null, lesson: 0, step: 0, gen: null, plan: null, demo: null, demoRunning: false, status: '', solved: false, tip: null, blockTrigger: false, showList: false, busyText: '' };
 const coachBusy = () => !!(coach.gen || coach.demo || coach.demoRunning);
 const pocketCorner = (sx, sz) => pockets.find(p => p.type === 'corner' && p.sx === sx && p.sz === sz);
@@ -4970,6 +5087,7 @@ function loop(time) {
   syncBallMeshes(dt);
   updateOpponent(dt);
   updateRoom(dt);
+  updateTrophy(dt);
   table.updateMatrixWorld();
   envUniforms.uTableInv.value.copy(table.matrixWorld).invert();
   renderer.render(scene, camera);
@@ -4984,6 +5102,10 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+document.querySelectorAll('#paneTabs button').forEach(b => b.addEventListener('click', () => showPane(b.dataset.pane)));
+try { const p = localStorage.getItem('desk-snooker-pane'); if (p && document.querySelector(`#paneTabs button[data-pane="${p}"]`)) showPane(p); } catch (e) { /* storage blocked */ }
+document.getElementById('abandonChamp').addEventListener('click', () => { if (confirm('Abandon this championship?')) abandonChampionship(); });
+document.getElementById('clearLog').addEventListener('click', clearCallLog);
 document.getElementById('toggle').addEventListener('click', e => {
   const panel = document.getElementById('panel');
   const collapsed = panel.classList.toggle('collapsed');
@@ -5014,7 +5136,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   opp, handRigs, updateHands, cue, get choice() { return choice; }, chooseOption, snookeredOnAll, get champ() { return champ; }, newChampionship, frameWon, concedeFrame, menuCanvas: menu.c, boardCanvas: board.c, drawMenu, setMenuPage: p => { menuPage = p; drawMenu(); }, AI_PLAYERS, R, L, W,
