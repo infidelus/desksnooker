@@ -13,7 +13,9 @@ A realistic snooker game for the Meta Quest 3 that runs straight from the browse
 
 ## Playing
 
-Open `index.html` in the Quest browser and choose **Play in passthrough** (or full VR). On a computer, open it in any modern browser and play with the mouse and keyboard. The controls are listed in the panel on the page.
+**Play it now: https://infidelus.github.io/desksnooker/**
+
+Open the link (or `index.html`) in the Quest browser and choose **Play in passthrough** (or full VR). On a computer, open it in any modern browser and play with the mouse and keyboard. The controls are listed in the panel on the page.
 
 ## Files
 
