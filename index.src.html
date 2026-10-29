@@ -330,7 +330,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 36;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 37;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1775,7 +1775,7 @@ function announceTouching() {
   const t = touchingBall();
   if (!t) return;
   const on = onPredicate(game.ballOn)(t);
-  say('touching');
+  sayAfter('touching');
   setMessage(`${game.message ? game.message + ' ' : ''}Touching ball (the ${t.name}): play away from it.${on ? ' It counts as the ball on, so you needn\'t hit another.' : ''}`);
 }
 
@@ -1943,6 +1943,11 @@ function say(...keys) {
   if (settings.referee === 'off' || !audio || settings.mode === 'coach') return;   // no referee during lessons
   playVoice(settings.referee === 'female' ? 'female' : 'male', keys, 'ref');
 }
+// The same, but after whatever the referee is already saying, with a short pause (the score, then "Touching ball")
+function sayAfter(...keys) {
+  if (settings.referee === 'off' || !audio || settings.mode === 'coach') return;
+  playVoice(settings.referee === 'female' ? 'female' : 'male', keys, 'ref', null, true);
+}
 // The coach talks on its own channel, so the referee doesn't cut it off
 const coachSources = [];
 function coachSay(...keys) {
@@ -1953,11 +1958,13 @@ function coachSay(...keys) {
   playVoice(settings.coachVoice === 'female' ? 'coachf' : 'coach', keys, 'coach', coachSources);
 }
 const voiceTokens = { ref: 0, coach: 0 };
-function playVoice(name, keys, channel, keep) {
-  const token = ++voiceTokens[channel];
-  voiceQueue = (async () => {
+// A new call cuts off the last one, unless it's queued `after` it
+const voiceEnd = { ref: 0, coach: 0 }, voiceChain = { ref: Promise.resolve(), coach: Promise.resolve() };
+function playVoice(name, keys, channel, keep, after = false) {
+  const token = after ? voiceTokens[channel] : ++voiceTokens[channel];
+  const run = async () => {
     const buf = await voiceBuffer(name);
-    let t = audio.currentTime + 0.05;
+    let t = Math.max(audio.currentTime + 0.05, after ? voiceEnd[channel] + 0.5 : 0);
     for (const k of keys.map(String)) {
       if (token !== voiceTokens[channel]) return;
       const clip = VOICE_TABLE && VOICE_TABLE[name][k];
@@ -1968,8 +1975,11 @@ function playVoice(name, keys, channel, keep) {
       src.start(t, Math.max(0, clip[0] - 0.02), clip[1] + 0.08);
       if (keep) keep.push(src);
       t += clip[1] + 0.35;
+      voiceEnd[channel] = t - 0.35;
     }
-  })();
+  };
+  voiceChain[channel] = (after ? voiceChain[channel].then(run) : run()).catch(() => { /* a failed call mustn't stop the next */ });
+  voiceQueue = voiceChain[channel];
 }
 function fallbackSpeak(text) {
   try { if (!window.speechSynthesis) return; const u = new SpeechSynthesisUtterance(text); u.lang = 'en-GB'; speechSynthesis.speak(u); } catch (e) { /* no speech */ }
@@ -2432,7 +2442,7 @@ function aiChooseAfterFoul(f, opts) {
   const pick = id => opts.find(o => o.id === id);
   let o;
   if (f.miss && best < 0.4 && pick('replace')) o = pick('replace');
-  else if (f.freeAvail) { o = { act: () => { game.freeBall = true; setChoice(null); say('free'); } }; }
+  else if (f.freeAvail) { o = { act: () => { game.freeBall = true; setChoice(null); sayAfter('free'); } }; }
   else o = pick('play');
   o.act();
   if (o.id !== 'replace') setMessage(`${f.head} ${game.players[f.incoming].name} ${o.id === 'play' ? 'plays from here.' : 'takes a free ball.'}`);
@@ -2466,7 +2476,7 @@ function endOfFrameScores(prefix) {
     const black = colourByValue(7);
     black.place(...SPOTS[7]); black.show(true);
     game.ballOn = 7; game.respotted = true; game.frameOver = false; game.breakScore = 0;
-    setTimeout(() => say('respot'), 1200);
+    sayAfter('respot');
     placeCueInHand();
     setMessage(`${prefix} Scores level: the black is re-spotted. ${game.players[game.current].name} plays from hand.`.trim());
     return;
@@ -5136,7 +5146,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   opp, handRigs, updateHands, cue, get choice() { return choice; }, chooseOption, snookeredOnAll, get champ() { return champ; }, newChampionship, frameWon, concedeFrame, menuCanvas: menu.c, boardCanvas: board.c, drawMenu, setMenuPage: p => { menuPage = p; drawMenu(); }, AI_PLAYERS, R, L, W,
