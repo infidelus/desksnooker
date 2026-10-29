@@ -38,4 +38,4 @@ This reads `index.src.html`, embeds each `@@ASSET:name@@` file from `assets/` an
 
 - [three.js](https://threejs.org/) for 3D rendering.
 - Hand models from the [WebXR Input Profiles](https://github.com/immersive-web/webxr-input-profiles) generic hand assets.
-- Voices made with the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) text-to-speech model.
+- Referee and coach voices made with [Airvoz](https://airvoz.com/); the female coach's voice with the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) text-to-speech model.
