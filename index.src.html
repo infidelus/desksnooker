@@ -33,6 +33,10 @@
   }
   #panel.collapsed > :not(header) { display: none; }
   header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .netrow { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+  .netrow input { font: inherit; font-size: 18px; letter-spacing: 0.2em; width: 8.5em; padding: 8px 10px; background: transparent; color: var(--chalk); border: 1px solid var(--line); border-radius: 6px; }
+  .netcode { font-family: var(--display); font-size: 34px; letter-spacing: 0.12em; color: var(--brass); }
+  .note { font-size: 13px; color: var(--muted, #9fb2a8); }
   .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 4px; }
   .tabs button { padding: 6px 10px; font-size: 13px; }
   #drawList { white-space: pre; font-size: 13px; line-height: 1.5; }
@@ -140,7 +144,7 @@
 
   <nav class="tabs" id="paneTabs">
     <button data-pane="play" class="on">Play</button><button data-pane="table">Table</button><button data-pane="coach">Coach</button>
-    <button data-pane="draw">Draw</button><button data-pane="log">Log</button><button data-pane="help">Help</button>
+    <button data-pane="online">Online</button><button data-pane="draw">Draw</button><button data-pane="log">Log</button><button data-pane="help">Help</button>
   </nav>
 
   <section class="pane" data-pane="play">
@@ -156,6 +160,17 @@
   <section class="pane" data-pane="coach" hidden>
     <h2>Coach</h2>
     <div class="rows" id="coachRows"></div>
+  </section>
+
+  <section class="pane" data-pane="online" hidden>
+    <h2>Online match</h2>
+    <p>Play someone on another computer or headset, with voice chat. One of you hosts and gets a five-digit room code; the other joins with it. The host's match length, reds, rules and pockets are used.</p>
+    <div class="netrow"><button class="primary" id="hostBtn">Host a match</button><span class="netcode" id="netCode"></span></div>
+    <div class="netrow"><input id="joinCode" inputmode="numeric" maxlength="5" placeholder="Room code" aria-label="Room code"><button id="joinBtn">Join</button></div>
+    <p id="netStatus"></p>
+    <p id="voiceState"></p>
+    <div class="netrow"><button id="muteBtn" hidden>Mute my microphone</button><button id="leaveBtn" hidden>Leave the match</button></div>
+    <p class="note">Set up the match before putting the headset on: the browser asks to use your microphone. Both players need the same build (shown under the title).</p>
   </section>
 
   <section class="pane" data-pane="draw" hidden>
@@ -321,6 +336,7 @@ let settings = { ...DEFAULTS };
 let savedSettings = {};
 try { savedSettings = JSON.parse(localStorage.getItem('desk-snooker') || '{}') || {}; Object.assign(settings, savedSettings); } catch (e) { /* storage blocked */ }
 if (settings.mode === 'match') settings.mode = 'two';
+if (settings.mode === 'online') settings.mode = 'practice';   // an online match never survives a reload
 if (settings.referee === true) settings.referee = 'male'; else if (settings.referee === false) settings.referee = 'off';
 // The original eight players are still here, among new ones: keep the same opponent
 const FIRST_EIGHT = ['Dave Hart', 'Shirley Brooks', 'Kev Dunmore', 'Priya Lal', 'Tommy Moran', 'Lin Wei', 'Alastair Grieve', 'Marcus Vale'];
@@ -330,10 +346,17 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 37;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 38;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
+// Online play's state (the rest is with the online code further down)
+const PEERJS_URL = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
+const net = { peer: null, conn: null, call: null, seat: 0, code: '', status: 'off', text: '', mic: null, muted: false, voice: false, audioEl: null,
+  shotId: 0, pendingEnd: null, remoteEnd: null, applying: false, aim: null, lastAim: 0, lastAimSent: 0, lastPlaceSent: 0, placeX: null, placeZ: null,
+  pendingOpts: null, digits: '' };
+const isOnline = () => settings.mode === 'online' && net.status === 'playing';
+const isRemoteTurn = () => settings.mode === 'online' && !game.frameOver && !!(game.players[game.current] && game.players[game.current].remote);
 try { champ = JSON.parse(localStorage.getItem('desk-snooker-champ') || 'null'); } catch (e) { champ = null; }
 if (champ && !champ.size) { champ.size = 8; champ.entrants.forEach(e => { if (e.ai !== null) e.ai = AI_PLAYERS.findIndex(p => p.name === e.name); }); }   // from before the new players
 function saveChamp() { try { localStorage.setItem('desk-snooker-champ', JSON.stringify(champ)); } catch (e) { /* ignore */ } }
@@ -1900,7 +1923,8 @@ function aimedColour(dirX, dirZ) {
 
 // Live strike of the cue ball
 function strikeCueBall(dirX, dirZ, speed, r, elev = 0) {
-  if (!canShoot(true)) return false;
+  if (!canShoot(true) && !net.applying) return false;
+  const pre = balls.map(b => [b.x, b.z, b.onTable]), args = { dirX, dirZ, speed, r: { x: r.x, y: r.y, z: r.z }, elev };
   initAudio();
   takeSnapshot();
   const nominated = game.freeBall && game.freeBall.nominated;
@@ -1916,6 +1940,7 @@ function strikeCueBall(dirX, dirZ, speed, r, elev = 0) {
   shot.aimed = game.ballOn === 'colour' && !game.nominated ? aimedColour(dirX, dirZ) : null;
   shot.touchingOn = touching && isMatch() && (nominated ? touching === nominated : onPredicate(game.ballOn)(touching)) ? touching : null;
   const miscue = launch(cueBall, dirX, dirZ, speed, r, elev);
+  if (isOnline() && !net.applying) { shot.id = ++net.shotId; netSend({ t: 'shot', id: shot.id, pre, ...args }); }
   ballInHand = false;
   if (typeof coachOnStrike === 'function') coachOnStrike();
   playClick(Math.min(speed, MAX_BALL_SPEED) * 1.2, 'cue');
@@ -2121,7 +2146,7 @@ function remainingPoints() {
 let choice = null;   // a decision the incoming player has to make after a foul
 const isAITurn = () => isMatch() && !game.frameOver && game.players[game.current].ai !== null;
 function canShoot(forAI) {
-  return !anyMoving() && !game.frameOver && !menuOpen && !grabbedCue && !choice && (forAI || (!isAITurn() && !coachBusy()));
+  return !anyMoving() && !game.frameOver && !menuOpen && !grabbedCue && !choice && (forAI || (!isAITurn() && !isRemoteTurn() && !coachBusy()));
 }
 
 function takeSnapshot() {
@@ -2158,6 +2183,11 @@ function setupPlayers() {
     const other = m ? champ.entrants[m.a === champ.you ? m.b : m.a] : null;
     game.players = [{ name: 'You', score: 0, ai: null }, { name: other ? other.name : '—', score: 0, ai: other ? other.ai : null }];
     match.bestOf = champBestOf(champ.round);
+  } else if (mode === 'online') {
+    // The host is player 1 on both devices; each device calls its own player "You"
+    const me = { name: 'You', score: 0, ai: null }, them = { name: 'Opponent', score: 0, ai: null, remote: true };
+    game.players = net.seat === 0 ? [me, them] : [them, me];
+    match.bestOf = +settings.bestOf;
   } else {
     game.players = [{ name: 'You', score: 0, ai: null }, { name: '', score: 0, ai: null }];
     match.bestOf = 1;
@@ -2241,7 +2271,7 @@ function showStats(msg) {
       const opp = champ.entrants[next.a === champ.you ? next.b : next.a].name;
       buttons.push({ t: `Next round: ${roundName(champ.round).toLowerCase()} v ${opp}`, act: () => { setChoice(null); continueAfterFrame(); } });
     } else {
-      buttons.push({ t: 'See the championship draw', act: () => { setChoice(null); if (renderer.xr.isPresenting) { menuPage = 'draw'; toggleMenu(true); } else document.getElementById('drawSection').scrollIntoView(); } });
+      buttons.push({ t: 'See the championship draw', act: () => { setChoice(null); if (renderer.xr.isPresenting) { menuPage = 'draw'; toggleMenu(true); } else showPane('draw'); } });
       buttons.push({ t: 'New championship', act: () => { setChoice(null); newChampionship(); } });
     }
   } else buttons.push({ t: 'Play another match', act: () => { setChoice(null); continueAfterFrame(); } });
@@ -2249,8 +2279,9 @@ function showStats(msg) {
   setChoice({ title: match.over ? (multi ? 'Match statistics' : 'Frame statistics') : `End of frame ${match.log.length}`, text: msg, stats: { names: [a.name, b.name], rows, frames: multi ? frames : '' }, buttons });
 }
 
-function continueAfterFrame() {
+function continueAfterFrame(fromNet = false) {
   if (!game.frameOver || anyMoving()) return;
+  if (settings.mode === 'online' && !fromNet) netSend({ t: 'continue' });
   if (settings.mode === 'practice') { newFrame(); return; }
   if (match.over) { if (settings.mode === 'champ') { if (champMatch()) startMatch(); else setMessage(champSummary()); } else startMatch(); return; }
   match.breaker = 1 - match.breaker;
@@ -2259,8 +2290,9 @@ function continueAfterFrame() {
 
 function concedeFrame() {
   if (!isMatch() || game.frameOver || anyMoving()) return;
-  const human = game.players.findIndex(p => p.ai === null);
+  const human = game.players.findIndex(p => p.ai === null && !p.remote);
   const quitter = settings.mode === 'two' ? game.current : human;
+  if (settings.mode === 'online') netSend({ t: 'concede' });
   frameWon(1 - quitter, `${game.players[quitter].name} conceded.`);
 }
 
@@ -2280,6 +2312,11 @@ function respot(b) { respotIn(balls, b); b.show(true); }
 function endShot() {
   const s = shot; shot = null;
   if (!s) return;
+  if (s.remote) { net.pendingEnd = s; tryRemoteEnd(); return; }        // their shot: wait for their result
+  if (isOnline()) netSend({ t: 'end', id: s.id, balls: balls.map(b => [b.x, b.z, b.onTable && !b.falling]), rec: shotRecord(s) });
+  finishShot(s);
+}
+function finishShot(s) {
   s.cueEnd = { x: cueBall.x, z: cueBall.z };
   endShotRules(s);
   if (!choice) announceTouching();
@@ -2399,6 +2436,10 @@ function offerAfterFoul(f) {
     askNomination(true);
   } });
   if (inc.ai !== null) { aiChooseAfterFoul(f, opts); return; }
+  if (settings.mode === 'online') {
+    if (inc.remote) { net.pendingOpts = opts; setMessage(`${f.head} Waiting for your opponent to choose.`); return; }
+    opts.forEach(o => { const act = o.act; if (o.id !== 'free') o.act = () => { netSend({ t: 'choice', id: o.id }); act(); }; });
+  }
   setMessage(f.head + ` ${inc.name === 'You' ? 'Your' : inc.name + "'s"} choice.`);
   setChoice({ title: f.miss ? 'Foul and a miss' : 'Foul', text: f.head, buttons: opts });
 }
@@ -2408,11 +2449,12 @@ function offerAfterFoul(f) {
 function askNomination(onlyIfSnookered) {
   if (!isMatch() || game.ballOn !== 'colour' || game.frameOver || !cueBall.onTable) return;
   const p = game.players[game.current];
-  if (p.ai !== null) return;
+  if (p.ai !== null || p.remote) return;
   const snookered = !canHitDirect(cloneBalls(balls), onPredicate('colour'));
   if (onlyIfSnookered && !snookered) return;
   const buttons = colours.filter(b => b.onTable).map(b => ({ t: cap(b.name), ball: b, act: () => {
     game.nominated = b; setChoice(null); setMessage(`${p.name} ${p.name === 'You' ? 'nominate' : 'nominates'} the ${b.name}.`);
+    if (settings.mode === 'online') netSend({ t: 'nominate', ball: balls.indexOf(b) });
   } }));
   if (!snookered) buttons.push({ t: 'Cancel', act: () => setChoice(null) });
   const how = renderer.xr.isPresenting ? ' Point at the ball on the table and pull the trigger, or choose below.' : ' Click the ball on the table, or choose below.';
@@ -2426,6 +2468,7 @@ function nominateFreeBall() {
   const cands = balls.filter(b => b !== cueBall && b.onTable && !on(b) && b.kind === 'colour');
   const buttons = cands.map(b => ({ t: cap(b.name), act: () => {
     game.freeBall = { nominated: b }; setChoice(null);
+    if (settings.mode === 'online') netSend({ t: 'freeball', ball: balls.indexOf(b) });
     say('free'); setMessage(`Free ball: the ${b.name} counts as the ${game.ballOn === 'red' ? 'red' : nameOf(game.ballOn)}. Hit it first.`);
   } }));
   buttons.push({ t: 'Back', act: () => { const prev = choice.prev; setChoice(prev); } });
@@ -3083,6 +3126,7 @@ function* breakOff(profile) {
 
 // The computer's cue, shown while it lines up and plays its shot
 function updateAI(dt) {
+  if (settings.mode === 'online') return;
   // After the computer's shot the cue stays on its follow-through until the balls stop
   if (opp.hold) {
     // Follow through 8 cm, hold for a moment, then the cue and hands fade away
@@ -3357,6 +3401,7 @@ function wrapText(g, text, x, y, maxW, lh, maxLines) {
 // ---------- Menu definition (shared by the VR menu and the page panel) ----------
 const setMode = mode => {
   if (mode !== 'coach' && settings.mode === 'coach') stopCoach();
+  if (mode !== 'online' && settings.mode === 'online') netLeave();
   settings.mode = mode; saveSettings();
   if (mode === 'coach') { startMatch(); startLesson(coach.lesson || 0, true); const pnl = document.getElementById('panel'); if (pnl && !pnl.classList.contains('collapsed')) document.getElementById('toggle').click(); return; }
   if (mode === 'champ' && (!champ || champ.champion !== null)) { newChampionship(); return; }
@@ -3385,7 +3430,7 @@ const playRows = [
     { t: () => game.nominated ? `Nominated: ${cap(game.nominated.name)}` : 'Nominate a colour', act: () => askNomination(false) },
   ] },
   { label: 'Frame', btns: [
-    { t: () => 'New match', act: () => { if (settings.mode === 'champ') { champ && (champ.curFrames = [0, 0]); } startMatch(); } },
+    { t: () => 'New match', act: () => { if (settings.mode === 'champ') { champ && (champ.curFrames = [0, 0]); } if (settings.mode === 'online') netSend({ t: 'newmatch' }); startMatch(); } },
     { t: () => 'Continue', act: () => continueAfterFrame() },
     { t: () => 'Concede', act: () => concedeFrame() },
     { t: () => 'Undo', act: () => { if (!anyMoving()) undo(); } },
@@ -3463,7 +3508,7 @@ const footerRow = { label: '', btns: [
 ] };
 function runAction(b) { if (!b.act) return; b.act(); if (!b.tab && menuPage === 'choice') { refreshBoard(); return; } saveSettings(); refreshBoard(); drawMenu(); renderSettingsPanel(); renderDraw(); }
 
-const MENU_PAGES = [{ id: 'play', label: 'Play' }, { id: 'table', label: 'Table & cue' }, { id: 'coach', label: 'Coach' }, { id: 'draw', label: 'Draw' }, { id: 'log', label: 'Log' }];
+const MENU_PAGES = [{ id: 'play', label: 'Play' }, { id: 'table', label: 'Table & cue' }, { id: 'coach', label: 'Coach' }, { id: 'online', label: 'Online' }, { id: 'draw', label: 'Draw' }, { id: 'log', label: 'Log' }];
 // The lesson titles (the lessons themselves are defined with the coach, further down)
 const LESSON_TITLES = ['Cue ball control', 'Cut angles', 'Doubles', 'One-cushion escapes', 'Two-cushion escape', 'Swerve', 'The break-off'];
 const coachRows = [
@@ -3539,7 +3584,29 @@ function drawMenu() {
     button(tab, 40 + i * (tw + 12), 104, tw, 64, p.label, menuPage === p.id);   // tabs on their own line under the title
   });
   let y = 196;
-  if (menuPage === 'log') {
+  if (menuPage === 'online') {
+    g.fillStyle = '#d4a94f'; g.font = `600 34px ${FONT}`; g.fillText('ONLINE MATCH, WITH VOICE CHAT', 40, y + 26); y += 64;
+    g.fillStyle = '#e9efe9'; g.font = `400 28px ${BODY}`;
+    y = wrapText(g, net.text || 'One of you hosts and gets a room code; the other joins with it.', 40, y, 944, 36, 4) + 56;
+    if (net.status === 'playing') {
+      g.fillStyle = '#9fb2a8'; g.fillText(net.voice ? `Voice chat on${net.muted ? ' (you are muted)' : ''}.` : 'Voice chat connecting…', 40, y); y += 40;
+      button({ act: () => setMute(!net.muted) }, 40, y, 462, 80, net.muted ? 'Unmute my microphone' : 'Mute my microphone', net.muted);
+      button({ act: () => { netLeave(); setMode('practice'); } }, 522, y, 462, 80, 'Leave the match', false);
+    } else {
+      if (net.status === 'hosting' && net.code) { g.fillStyle = '#d4a94f'; g.font = `800 96px ${FONT}`; g.fillText(net.code.split('').join(' '), 40, y + 40); y += 110; }
+      button({ act: () => { initAudio(); hostOnline(); } }, 40, y, 944, 80, net.status === 'hosting' ? 'Host again (new code)' : 'Host a match', false); y += 110;
+      // Joining: a keypad for the five-digit code
+      g.fillStyle = '#9fb2a8'; g.font = `400 28px ${BODY}`; g.fillText('Or join with a code:', 40, y + 20);
+      g.fillStyle = '#e9efe9'; g.font = `800 64px ${FONT}`; g.fillText((net.digits + '_____').slice(0, 5).split('').join(' '), 380, y + 24); y += 70;
+      const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'Join'];
+      keys.forEach((k, i) => {
+        const col = i % 3, row = Math.floor(i / 3), act = k === '⌫' ? () => { net.digits = net.digits.slice(0, -1); }
+          : k === 'Join' ? () => { initAudio(); joinOnline(net.digits); } : () => { if (net.digits.length < 5) net.digits += k; };
+        button({ act }, 40 + col * 320, y + row * 92, 304, 80, k, k === 'Join' && net.digits.length === 5);
+      });
+      if (net.status !== 'off') button({ act: () => netLeave() }, 40, y + 4 * 92 + 10, 944, 72, 'Cancel', false);
+    }
+  } else if (menuPage === 'log') {
     g.fillStyle = '#d4a94f'; g.font = `600 34px ${FONT}`; g.fillText("THE REFEREE'S RECENT CALLS", 40, y + 26); y += 70;
     if (!callLog.length) { g.fillStyle = '#9fb2a8'; g.font = `400 28px ${BODY}`; g.fillText('Nothing yet.', 40, y); }
     if (callLog.length) button({ act: clearCallLog }, 40, c.height - 196, 944, 72, 'Clear the log', false);
@@ -3941,7 +4008,7 @@ function updateGrab() {
     if (cueSpotValid(x, z)) { cueBall.x = x; cueBall.z = z; }
     return;
   }
-  const allowed = !anyMoving() && !isAITurn() && !game.frameOver && (ballInHand || settings.mode === 'practice');
+  const allowed = !anyMoving() && !isAITurn() && !isRemoteTurn() && !game.frameOver && (ballInHand || settings.mode === 'practice');
   if (!allowed) return;
   for (const side of ['left', 'right']) {
     const h = hands[side];
@@ -4030,7 +4097,7 @@ function handleHeadsetButtons() {
   const left = hands.left, right = hands.right;
   if (justPressed(left, 5)) { if (choice && !menuOpen) menuPage = 'choice'; toggleMenu(); }   // Y
   if (menuOpen) return;
-  if (justPressed(left, 4)) bringCueBallToHand();              // X
+  if (justPressed(left, 4) && !isRemoteTurn()) bringCueBallToHand();              // X
   if (justPressed(right, 4)) {                                 // A
     if (game.frameOver) continueAfterFrame();
     else { settings.aim = !settings.aim; saveSettings(); }
@@ -4221,7 +4288,7 @@ function updateHands(show, tip, dir, gripPoint, bridgePoint) {
 // ---------- The opponent: a pair of hands and a cue that glide in to play ----------
 const oppSkin = patchEnv(new THREE.MeshStandardMaterial({ color: 0xb98060, roughness: 0.62, transparent: true, opacity: 0, dithering: true }));
 const opp = { rigs: {}, glide: 0, from: null, hold: null, fade: 0 };
-const oppOn = () => opp.rigs.right && settings.figure && (settings.mode === 'ai' || settings.mode === 'champ' || settings.mode === 'coach');
+const oppOn = () => opp.rigs.right && settings.figure && (settings.mode === 'ai' || settings.mode === 'champ' || settings.mode === 'coach' || settings.mode === 'online');
 
 // Hands on the computer's cue: bridge 30 cm behind the tip, grip a metre further back
 function poseOppHands(tip, quat, bridgeTip) {
@@ -4920,7 +4987,7 @@ canvas.addEventListener('pointerdown', e => {
     if (hitBall) { hitBall.b.act(); refreshBoard(); }
     return;
   }
-  if (isAITurn() || game.frameOver) return;
+  if (isAITurn() || isRemoteTurn() || game.frameOver) return;
   const p = mouseTablePoint();
   // Ball in hand: drag the white to move it in the D (or click in the D if it isn't on the table yet).
   // A press anywhere else aims and strikes as usual.
@@ -4945,7 +5012,7 @@ window.addEventListener('pointerup', e => {
 });
 // Ball in hand: I/J/K/L slide the cue ball away/left/towards/right as seen from the camera
 function nudgeCueBall(k, step) {
-  if (!ballInHand || anyMoving() || isAITurn() || game.frameOver || choice) return;
+  if (!ballInHand || anyMoving() || isAITurn() || isRemoteTurn() || game.frameOver || choice) return;
   table.updateMatrixWorld();
   const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
   fwd.applyQuaternion(table.quaternion.clone().invert()); fwd.y = 0;
@@ -5097,6 +5164,7 @@ function loop(time) {
   syncBallMeshes(dt);
   updateOpponent(dt);
   updateRoom(dt);
+  netUpdate();
   updateTrophy(dt);
   table.updateMatrixWorld();
   envUniforms.uTableInv.value.copy(table.matrixWorld).invert();
@@ -5116,6 +5184,12 @@ document.querySelectorAll('#paneTabs button').forEach(b => b.addEventListener('c
 try { const p = localStorage.getItem('desk-snooker-pane'); if (p && document.querySelector(`#paneTabs button[data-pane="${p}"]`)) showPane(p); } catch (e) { /* storage blocked */ }
 document.getElementById('abandonChamp').addEventListener('click', () => { if (confirm('Abandon this championship?')) abandonChampionship(); });
 document.getElementById('clearLog').addEventListener('click', clearCallLog);
+document.getElementById('hostBtn').addEventListener('click', () => { initAudio(); hostOnline(); });
+document.getElementById('joinBtn').addEventListener('click', () => { initAudio(); joinOnline(document.getElementById('joinCode').value); });
+document.getElementById('joinCode').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { initAudio(); joinOnline(e.target.value); } });
+document.getElementById('muteBtn').addEventListener('click', () => setMute(!net.muted));
+document.getElementById('leaveBtn').addEventListener('click', () => { const was = settings.mode === 'online'; netLeave(); if (was) setMode('practice'); renderSettingsPanel(); });
+renderOnline();
 document.getElementById('toggle').addEventListener('click', e => {
   const panel = document.getElementById('panel');
   const collapsed = panel.classList.toggle('collapsed');
@@ -5135,6 +5209,236 @@ document.fonts?.ready.then(() => { refreshBoard(); drawMenu(); });
 renderer.setAnimationLoop(loop);
 loadModels();
 
+// =====================================================================
+//  Online matches: two players on different computers or headsets, connected directly to each other
+//  (WebRTC, found through the free PeerJS service), with voice chat.
+//  The player at the table is in charge of each shot. Their device sends the shot as it's struck, and
+//  when the balls stop it sends where everything ended up and what happened. The other device plays the
+//  same shot, then takes those as the truth. Both run the same rules, so scores, fouls and choices agree.
+// =====================================================================
+const peerId = code => `desksnooker-${code}`;
+const ballIndex = b => (b ? balls.indexOf(b) : -1);
+
+function loadPeerJS() {
+  if (window.Peer) return Promise.resolve();
+  return new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = PEERJS_URL; s.onload = res; s.onerror = () => rej(new Error('blocked'));
+    document.head.appendChild(s);
+  });
+}
+function netStatus(text) {
+  net.text = text; renderOnline();
+  try { if (menuPage === 'online' && menuOpen) drawMenu(); } catch (e) { /* the menu isn't set up yet */ }
+}
+
+// ---------- connecting ----------
+async function hostOnline() {
+  netLeave(true);
+  netStatus('Setting up…');
+  getMic();                                            // asks for the microphone now, while you're at the menu
+  try { await loadPeerJS(); } catch (e) { netStatus('Could not reach the connection service. Check your internet connection.'); return; }
+  const code = String(10000 + Math.floor(Math.random() * 90000));
+  net.code = code; net.seat = 0; net.status = 'hosting';
+  const peer = net.peer = new Peer(peerId(code));
+  peer.on('open', () => netStatus(`Your room code is ${code}. Your opponent chooses Join and enters it.`));
+  peer.on('connection', c => { if (net.conn) { c.close(); return; } setupConn(c); });
+  peer.on('call', answerCall);
+  peer.on('error', e => { if (e.type === 'unavailable-id') hostOnline(); else netStatus(`Connection problem (${e.type}). Try again.`); });
+}
+async function joinOnline(code) {
+  code = String(code || '').replace(/\D/g, '');
+  if (code.length !== 5) { netStatus('The room code has five digits.'); return; }
+  netLeave(true);
+  netStatus(`Looking for room ${code}…`);
+  getMic();
+  try { await loadPeerJS(); } catch (e) { netStatus('Could not reach the connection service. Check your internet connection.'); return; }
+  net.code = code; net.seat = 1; net.status = 'joining';
+  const peer = net.peer = new Peer();
+  peer.on('open', () => setupConn(peer.connect(peerId(code), { reliable: true })));
+  peer.on('call', answerCall);
+  peer.on('error', e => netStatus(e.type === 'peer-unavailable'
+    ? `No match found with code ${code}. Check the code, and that your opponent is still hosting.` : `Connection problem (${e.type}). Try again.`));
+}
+function setupConn(c) {
+  net.conn = c;
+  c.on('open', () => netSend({ t: 'hello', build: BUILD }));
+  c.on('data', netReceive);
+  c.on('close', () => netLost('Your opponent has left the match.'));
+  c.on('error', () => netLost('The connection to your opponent was lost.'));
+}
+function netSend(m) { if (net.conn && net.conn.open) net.conn.send(m); }
+// Leave the match (quietly, when starting a new one)
+function netLeave(quiet = false) {
+  if (net.conn && net.conn.open) netSend({ t: 'bye' });
+  const wasPlaying = net.status === 'playing';
+  try { if (net.call) net.call.close(); } catch (e) { /* already closed */ }
+  try { if (net.conn) net.conn.close(); } catch (e) { /* already closed */ }
+  try { if (net.peer) net.peer.destroy(); } catch (e) { /* already gone */ }
+  Object.assign(net, { peer: null, conn: null, call: null, status: 'off', voice: false, pendingEnd: null, remoteEnd: null, pendingOpts: null, aim: null });
+  if (net.audioEl) net.audioEl.srcObject = null;
+  aiCue.visible = false;
+  if (!quiet) netStatus(wasPlaying ? 'You left the match.' : '');
+}
+function netLost(text) {
+  if (net.status === 'off') return;
+  const wasPlaying = net.status === 'playing';
+  netLeave(true);
+  netStatus(text);
+  if (wasPlaying && settings.mode === 'online') { settings.mode = 'practice'; setMessage(text + ' Back to practice.'); renderSettingsPanel(); drawMenu(); }
+}
+
+// ---------- voice chat ----------
+async function getMic() {
+  if (net.mic) return net.mic;
+  try { net.mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+  catch (e) { net.mic = null; }
+  setMute(net.muted);
+  return net.mic;
+}
+// A silent stream, for a player without a microphone, so they can still hear
+function silentStream() { initAudio(); return audio.createMediaStreamDestination().stream; }
+function hearOpponent(stream) {
+  if (!net.audioEl) { net.audioEl = new Audio(); net.audioEl.autoplay = true; }
+  net.audioEl.srcObject = stream; net.audioEl.play().catch(() => { /* starts on the next tap */ });
+  net.voice = true; renderOnline();
+}
+async function answerCall(call) {
+  const mic = await getMic();
+  call.answer(mic || silentStream());
+  call.on('stream', hearOpponent);
+  net.call = call;
+}
+async function startVoice() {
+  const mic = await getMic();
+  if (!net.peer || !net.conn) return;
+  const call = net.peer.call(net.conn.peer, mic || silentStream());
+  call.on('stream', hearOpponent);
+  net.call = call;
+}
+function setMute(m) {
+  net.muted = m;
+  if (net.mic) net.mic.getAudioTracks().forEach(t => { t.enabled = !m; });
+  renderOnline();
+}
+
+// ---------- the match ----------
+// The host's settings decide the match; both tables must be the same
+function beginOnline(s) {
+  Object.assign(settings, { bestOf: s.bestOf, reds: s.reds, rules: s.rules });
+  if (settings.pockets !== s.pockets) { settings.pockets = s.pockets; rebuildTable(); }
+  if (settings.mode === 'coach') stopCoach();
+  settings.mode = 'online'; net.status = 'playing';
+  startMatch();
+  netStatus(`Connected${net.mic ? '' : ' (no microphone: you can hear but not talk)'}. ${net.seat === 0 ? 'You break.' : 'Your opponent breaks.'}`);
+  renderSettingsPanel(); drawMenu();
+}
+function shotRecord(s) {
+  return { firstHit: ballIndex(s.firstHit), potted: s.potted.map(ballIndex), touchingOn: ballIndex(s.touchingOn), aimed: ballIndex(s.aimed),
+    clearView: s.clearView, minOnDist: isFinite(s.minOnDist) ? s.minOnDist : 1e9 };
+}
+function useRecord(s, r) {
+  const b = i => (i >= 0 ? balls[i] : null);
+  Object.assign(s, { firstHit: b(r.firstHit), potted: r.potted.map(b), touchingOn: b(r.touchingOn), aimed: b(r.aimed), clearView: r.clearView, minOnDist: r.minOnDist });
+}
+// Their shot, played on this table from exactly where the balls were on theirs
+function applyRemoteShot(m) {
+  if (!isRemoteTurn() || anyMoving()) return;
+  m.pre.forEach(([x, z, on], i) => { const b = balls[i]; if (on) { b.place(x, z); b.onTable = true; b.show(true); } });
+  aiCue.visible = false;
+  net.applying = true;
+  strikeCueBall(m.dirX, m.dirZ, m.speed, m.r, m.elev);
+  net.applying = false;
+  if (shot) { shot.remote = true; shot.id = m.id; }
+}
+// When both this table has stopped and their result has arrived: their table is the truth
+function tryRemoteEnd() {
+  const s = net.pendingEnd, e = net.remoteEnd;
+  if (!s || !e || anyMoving()) return false;
+  net.pendingEnd = net.remoteEnd = null;
+  e.balls.forEach(([x, z, on], i) => {
+    const b = balls[i];
+    b.vx = b.vz = b.wx = b.wy = b.wz = 0;
+    if (on) { b.falling = null; b.place(x, z); b.onTable = true; b.show(true); }
+    else if (b.onTable || b.falling || !b.inPocket) { b.falling = null; b.onTable = false; b.inPocket = { x, y: -0.1, z }; }
+  });
+  useRecord(s, e.rec);
+  finishShot(s);
+  return true;
+}
+function netReceive(m) {
+  if (!m || typeof m !== 'object') return;
+  switch (m.t) {
+    case 'hello':
+      if (m.build !== BUILD) {
+        netStatus(`Your opponent is on build ${m.build} and you're on build ${BUILD}. Both reload the page to get the latest version, then try again.`);
+        setTimeout(() => netLeave(true), 500); return;
+      }
+      if (net.seat === 0) {
+        const s = { bestOf: settings.bestOf, reds: settings.reds, rules: settings.rules, pockets: settings.pockets };
+        netSend({ t: 'start', s }); beginOnline(s);
+      }
+      return;
+    case 'start': beginOnline(m.s); startVoice(); return;
+    case 'aim': net.aim = m; net.lastAim = performance.now(); return;
+    case 'place': if (isRemoteTurn() && !anyMoving()) { cueBall.place(m.x, m.z); cueBall.onTable = true; cueBall.show(true); } return;
+    case 'shot': applyRemoteShot(m); return;
+    case 'end': net.remoteEnd = m; tryRemoteEnd(); return;
+    case 'choice': {
+      const o = net.pendingOpts && net.pendingOpts.find(x => x.id === m.id);
+      net.pendingOpts = null;
+      if (o) o.act();
+      return;
+    }
+    case 'freeball': {
+      const b = balls[m.ball]; net.pendingOpts = null;
+      game.freeBall = { nominated: b }; setChoice(null); say('free');
+      setMessage(`Free ball: your opponent plays the ${b.name} as the ${game.ballOn === 'red' ? 'red' : nameOf(game.ballOn)}.`);
+      return;
+    }
+    case 'nominate': { const b = balls[m.ball]; game.nominated = b; setMessage(`Opponent nominates the ${b.name}.`); return; }
+    case 'concede': frameWon(net.seat, 'Opponent conceded.'); return;
+    case 'continue': if (choice && choice.stats) setChoice(null); continueAfterFrame(true); return;
+    case 'newmatch': setChoice(null); startMatch(); return;
+    case 'bye': netLost('Your opponent has left the match.'); return;
+  }
+}
+// Each frame: show them our cue and where we put the cue ball, and show us theirs
+function netUpdate() {
+  if (!isOnline()) return;
+  const now = performance.now();
+  table.updateMatrixWorld();
+  if (!isRemoteTurn() && !anyMoving() && !game.frameOver) {
+    if (cue.visible && now - net.lastAimSent > 66) {
+      net.lastAimSent = now;
+      const tip = table.worldToLocal(cue.position.clone());
+      const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(cue.quaternion).applyQuaternion(table.quaternion.clone().invert());
+      netSend({ t: 'aim', tip: tip.toArray(), dir: dir.toArray() });
+    }
+    if (ballInHand && cueBall.onTable && now - net.lastPlaceSent > 100 && (cueBall.x !== net.placeX || cueBall.z !== net.placeZ)) {
+      net.lastPlaceSent = now; net.placeX = cueBall.x; net.placeZ = cueBall.z;
+      netSend({ t: 'place', x: cueBall.x, z: cueBall.z });
+    }
+  }
+  if (isRemoteTurn() && net.aim && now - net.lastAim < 600 && !anyMoving()) {
+    aiCue.position.copy(fromTable(new THREE.Vector3(...net.aim.tip)));
+    aiCue.quaternion.setFromUnitVectors(UP, new THREE.Vector3(...net.aim.dir).normalize().applyQuaternion(table.quaternion));
+    aiCue.visible = true;
+  } else aiCue.visible = false;
+}
+
+// ---------- the Online tab on the screen ----------
+function renderOnline() {
+  const st = document.getElementById('netStatus');
+  if (!st) return;
+  st.textContent = net.text || 'Not connected.';
+  const playing = net.status === 'playing', busy = net.status !== 'off';
+  document.getElementById('netCode').textContent = net.status === 'hosting' && net.code ? net.code : '';
+  document.getElementById('muteBtn').hidden = !playing;
+  document.getElementById('muteBtn').textContent = net.muted ? 'Unmute my microphone' : 'Mute my microphone';
+  document.getElementById('leaveBtn').hidden = !busy;
+  document.getElementById('voiceState').textContent = playing ? (net.voice ? `Voice chat on${net.muted ? ' (you are muted)' : ''}.` : 'Voice chat connecting…') : '';
+}
+
 // Finishes the current shot instantly (used by automated tests)
 function settleNow() {
   let n = 0;
@@ -5146,7 +5450,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   opp, handRigs, updateHands, cue, get choice() { return choice; }, chooseOption, snookeredOnAll, get champ() { return champ; }, newChampionship, frameWon, concedeFrame, menuCanvas: menu.c, boardCanvas: board.c, drawMenu, setMenuPage: p => { menuPage = p; drawMenu(); }, AI_PLAYERS, R, L, W,
