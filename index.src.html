@@ -171,6 +171,7 @@
     <p id="voiceState"></p>
     <div class="netrow"><button id="muteBtn" hidden>Mute my microphone</button><button id="leaveBtn" hidden>Leave the match</button></div>
     <p class="note">Set up the match before putting the headset on: the browser asks to use your microphone. Both players need the same build (shown under the title).</p>
+    <p class="note">Both devices call the score, so if you're testing with two devices in the same room you'll hear each call twice, a moment apart.</p>
   </section>
 
   <section class="pane" data-pane="draw" hidden>
@@ -192,6 +193,7 @@
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
       <dt>Left stick</dt><dd>Slide the table around</dd>
       <dt>Right stick</dt><dd>Left/right rotates the table round you; a firm hold up or down changes its height</dd>
+      <dt>After a shot</dt><dd>The table glides round so the cue ball is in front of you, facing the likely shot. Moving the table yourself stops it. Change it under Table: After a shot</dd>
       <dt>X</dt><dd>Bring the cue ball to your bridge hand</dd>
       <dt>Y</dt><dd>Menu (point and pull the cue trigger)</dd>
       <dt>A</dt><dd>Aiming guide on or off · continue after a frame</dd>
@@ -328,7 +330,7 @@ const roundName = r => ROUND_NAMES[ROUND_NAMES.length - champRounds() + r];
 // =====================================================================
 const DEFAULTS = {
   mode: 'practice', aim: true, pockets: 'standard', power: 1.3, bridge: 0.25,
-  hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, legs: true, sound: true, tableY: 0.76,
+  hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, follow: 'aim', legs: true, sound: true, tableY: 0.76,
   opponent: 8, bestOf: 3, reds: 15, champLevel: 'amateur', champLength: 'short', champSize: 16,
   referee: 'male', coachVoice: 'male', hands: 'medium', figure: true, rules: 'pro',
 };
@@ -346,7 +348,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 38;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 39;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2322,6 +2324,7 @@ function finishShot(s) {
   if (!choice) announceTouching();
   if (settings.mode === 'coach') coachAfterShot(s);
   if (!xrMode && cueBall.onTable) desk.recentre = true;   // on the desktop, the view glides back to the cue ball
+  followCueBall();                                         // in the headset, the table comes round to you
 }
 function endShotRules(s) {
   const cuePotted = s.potted.includes(cueBall);
@@ -3484,6 +3487,11 @@ const tableRows = [
     { t: () => 'The table', on: () => settings.stickFeel === 'table', act: () => { settings.stickFeel = 'table'; } },
     { t: () => 'Me', on: () => settings.stickFeel === 'me', act: () => { settings.stickFeel = 'me'; } },
   ] },
+  { label: 'After a shot', btns: [
+    { t: () => 'Turn to the shot', on: () => settings.follow === 'aim', act: () => { settings.follow = 'aim'; } },
+    { t: () => 'Bring cue ball', on: () => settings.follow === 'ball', act: () => { settings.follow = 'ball'; } },
+    { t: () => 'Stay put', on: () => settings.follow === 'off', act: () => { settings.follow = 'off'; } },
+  ] },
   { label: 'Table', btns: [
     { t: () => settings.lockTable ? 'Locked' : 'Movable', on: () => settings.lockTable, act: () => { settings.lockTable = !settings.lockTable; } },
     { t: () => settings.legs ? 'Legs on' : 'Legs off', on: () => settings.legs, act: () => { settings.legs = !settings.legs; updateLegs(); } },
@@ -3771,6 +3779,43 @@ function placeTableInFront() {
   updateLegs();
 }
 
+// In the headset, after each shot the table glides round so the cue ball is in front of you for your next shot,
+// turned so you're looking along the likely shot ('aim') or just moved without turning ('ball')
+const tableGlide = { t: -1 };
+function nextShotLine() {
+  const pred = game.freeBall ? (b => b.kind !== 'cue') : onPredicate(isMatch() ? game.ballOn : (game.practiceOn || 'red'));
+  const list = cloneBalls(balls), o = potOptions(list, pred, 0.002)[0];
+  if (o) return [o.dirX, o.dirZ];
+  const on = list.filter((b, i) => i > 0 && b.onTable && pred(b)).sort((a, b) => Math.hypot(a.x - cueBall.x, a.z - cueBall.z) - Math.hypot(b.x - cueBall.x, b.z - cueBall.z))[0];
+  const tx = on ? on.x : 0, tz = on ? on.z : 0, d = Math.hypot(tx - cueBall.x, tz - cueBall.z) || 1;
+  return [(tx - cueBall.x) / d, (tz - cueBall.z) / d];
+}
+function followCueBall() {
+  if (!xrMode || settings.follow === 'off' || settings.lockTable || !cueBall.onTable || game.frameOver || isAITurn() || isRemoteTurn()) return;
+  const { pos, fwd } = headPose();
+  let yaw = table.rotation.y;
+  if (settings.follow === 'aim') {
+    const [dx, dz] = nextShotLine();
+    // the yaw that turns this line on the table to point straight ahead of you
+    yaw = Math.atan2(-fwd.z, fwd.x) - Math.atan2(-dz, dx);
+  }
+  const target = pos.clone().addScaledVector(fwd, 0.5);
+  table.updateMatrixWorld();
+  const from = table.localToWorld(new THREE.Vector3(cueBall.x, 0, cueBall.z));
+  Object.assign(tableGlide, { t: 0, yaw0: table.rotation.y, yaw1: table.rotation.y + Math.atan2(Math.sin(yaw - table.rotation.y), Math.cos(yaw - table.rotation.y)), from, to: target });
+}
+function updateTableGlide(dt) {
+  if (tableGlide.t < 0) return;
+  tableGlide.t = Math.min(1, tableGlide.t + dt / 1.3);
+  const k = tableGlide.t < 0.5 ? 2 * tableGlide.t ** 2 : 1 - (-2 * tableGlide.t + 2) ** 2 / 2;       // ease in and out
+  table.rotation.y = tableGlide.yaw0 + (tableGlide.yaw1 - tableGlide.yaw0) * k;
+  table.updateMatrixWorld();
+  // keep the cue ball on its smooth path from where it was to in front of you
+  const want = tableGlide.from.clone().lerp(tableGlide.to, k), now = table.localToWorld(new THREE.Vector3(cueBall.x, 0, cueBall.z));
+  table.position.x += want.x - now.x; table.position.z += want.z - now.z;
+  if (tableGlide.t >= 1) tableGlide.t = -1;
+}
+
 function bringCueBallToHand() {
   const bridge = hands[settings.hand === 'right' ? 'left' : 'right'];
   const { pos, fwd } = headPose();
@@ -3806,6 +3851,7 @@ function moveTableWithSticks(dt) {
   const lx = axis(left, 2), ly = axis(left, 3);
   const [rx, ry] = rightStickAxes(dt);
   if (!lx && !ly && !rx && !ry) { if (heightDirty) { heightDirty = false; settings.tableY = table.position.y; saveSettings(); } return; }
+  tableGlide.t = -1;                                       // moving the table yourself stops the glide
   const { pos, fwd, right: rgt } = headPose();
   const sign = settings.stickFeel === 'table' ? 1 : -1;
   const speed = 1.1 * dt;
@@ -5144,6 +5190,8 @@ function loop(time) {
   if (renderer.xr.isPresenting) {
     xrFrames++;
     if (needPlacement && xrFrames > 5) { needPlacement = false; placeTableInFront(); }
+    if (cueState.locked || grabbedCue) tableGlide.t = -1;
+    updateTableGlide(dt);
     handleHeadsetButtons();
     if (!cueState.locked && !grabbedCue) moveTableWithSticks(dt);
     updateGrab();
@@ -5450,7 +5498,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   opp, handRigs, updateHands, cue, get choice() { return choice; }, chooseOption, snookeredOnAll, get champ() { return champ; }, newChampionship, frameWon, concedeFrame, menuCanvas: menu.c, boardCanvas: board.c, drawMenu, setMenuPage: p => { menuPage = p; drawMenu(); }, AI_PLAYERS, R, L, W,
