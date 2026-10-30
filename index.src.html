@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 50;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 51;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2800,6 +2800,26 @@ function canHitDirect(list, pred) {
   return false;
 }
 
+// How much of the balls on the cue ball can see directly: the share of contacts (full, half and thin, either side,
+// on each ball on) it has a clear path to. 0 means snookered.
+function viewOfBallsOn(list, pred) {
+  const cue = list[0];
+  let clear = 0, all = 0;
+  for (let i = 1; i < list.length; i++) {
+    const t = list[i];
+    if (!t.onTable || !pred(t)) continue;
+    const dx = t.x - cue.x, dz = t.z - cue.z, d = Math.hypot(dx, dz);
+    const px = -dz / d, pz = dx / d;
+    for (const off of [0, 0.9, -0.9, 0.5, -0.5]) {
+      const tx = t.x + px * off * 2 * R - dx / d * Math.sqrt(Math.max(0, 1 - off * off)) * 2 * R;
+      const tz = t.z + pz * off * 2 * R - dz / d * Math.sqrt(Math.max(0, 1 - off * off)) * 2 * R;
+      all++;
+      if (pathClear(list, cue.x, cue.z, tx, tz, [cue, t], 2 * R - 0.0005)) clear++;
+    }
+  }
+  return all ? clear / all : 0;
+}
+
 // How good the position is for the next shot (0..1)
 function positionValue(list, ballOn, sigma) {
   const opts = potOptions(list, onPredicate(ballOn), sigma);
@@ -2841,8 +2861,19 @@ function* aiThink(profile) {
       const p = o ? o.p : 0;
       if (p > bestP) { bestP = p; placed = [x, z]; }
     }
-    if (bestP < 0.25 && spotFreeIn(balls, BAULK_X, 0.2, cueBall)) placed = [BAULK_X, 0.2];
-    yield;
+    // No pot worth playing: put it where there's a clear view of a ball on (never somewhere it's snookered),
+    // as full a view as possible, nearest the usual spot
+    if (bestP < 0.25) {
+      let bestV = -1;
+      for (let dx = -0.28; dx <= 0.001; dx += 0.04) for (let dz = -0.28; dz <= 0.281; dz += 0.04) {
+        const x = BAULK_X + dx, z = dz;
+        if ((x - BAULK_X) ** 2 + z * z > (D_R - 0.005) ** 2 || !spotFreeIn(balls, x, z, cueBall)) continue;
+        const list = cloneBalls(balls); list[0].x = x; list[0].z = z; list[0].onTable = true;
+        const v = viewOfBallsOn(list, pred) - Math.hypot(dx, z - 0.2) * 0.01;
+        if (v > bestV) { bestV = v; placed = [x, z]; }
+      }
+      yield;
+    }
   }
   // The break-off: clip the end red of the back row, off the cushions and back up to baulk
   if (ballInHand && !undoStack.length && ballOn === 'red' && redsLeft() === settings.reds && settings.reds > 1) {
@@ -5972,7 +6003,7 @@ function settleNow() {
 window.snooker = { reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
-  hands, updateHeadsetCue, cueState, placeRest,
+  hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn,
   opp, handRigs, updateHands, cue, get choice() { return choice; }, chooseOption, snookeredOnAll, get champ() { return champ; }, newChampionship, frameWon, concedeFrame, menuCanvas: menu.c, boardCanvas: board.c, drawMenu, setMenuPage: p => { menuPage = p; drawMenu(); }, AI_PLAYERS, R, L, W,
 };
 </script>
