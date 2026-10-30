@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 49;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 50;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4220,7 +4220,12 @@ function updateHeadsetCue(dt, now) {
       cueState.need = want; cueState.needT = 0;
     }
     const need = cueState.need || 'none';
-    const restHold = need !== 'none' && cueState.restAt ? placeRest(playerRest, need, cueState.restAt, dir, settings.hand === 'right' ? 'left' : 'right', bridgeHand.grip.position) : placeRest(playerRest, 'none');
+    // Once you're cueing, the rest stays exactly where it is, whatever your bridge hand does: only the cue moves
+    const rs = cueState.rest;
+    if (rs && !cueState.locked) rs.handle = table.worldToLocal(bridgeHand.grip.position.clone());
+    const handleAt = rs && rs.handle ? table.localToWorld(rs.handle.clone()) : bridgeHand && bridgeHand.grip.position;
+    const restHold = need !== 'none' && cueState.restAt ? placeRest(playerRest, need, cueState.restAt, cueState.locked && rs && rs.dir ? rs.dir : dir, settings.hand === 'right' ? 'left' : 'right', handleAt) : placeRest(playerRest, 'none');
+    if (rs && !cueState.locked) rs.dir = dir.clone();
     setExtension(cue, need);
     updateHands(true, tipWorld, dir, gripPoint, bridgePoint, restHold);
   }
