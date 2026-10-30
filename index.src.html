@@ -191,7 +191,7 @@
     <h2>Quest controls</h2>
     <dl>
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
-      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand holds it and it points where your hand points, coming out raised. Tip your wrist down to set its head on the cloth behind the cue ball; once down, swing the butt left or right to turn the rest about its head, tilt your wrist up slightly to lift the head a touch, or further to lift it clear. Rests are a fixed length: pull back past the end and the head is dragged with you. For a rest shot the table glides round to put you at the cushion. Your cue hand plays the shot. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
+      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand holds it and it points where your hand points, coming out raised (hold the grip button to slide your hand along it). Tip your wrist down to set its head on the cloth behind the cue ball, then bring your cue to the top of the head: it settles in with a buzz and you can cue (point well away to take it out). With Headset rest set to Cue in rest, the cue is always lined up through the head instead. Once down, swing the butt left or right to turn the rest about its head, tilt your wrist up slightly to lift the head a touch, or further to lift it clear. Rests are a fixed length: pull back past the end and the head is dragged with you. For a rest shot the table glides round to put you at the cushion. Your cue hand plays the shot. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
       <dt>Trigger + left stick</dt><dd>While the cue is locked, push left or right to fine-tune the aim (a gentle push for the smallest changes; a tick every 0.1°)</dd>
       <dt>Left stick</dt><dd>Slide the table around</dd>
       <dt>Right stick</dt><dd>Left/right rotates the table round you</dd>
@@ -333,7 +333,7 @@ const roundName = r => ROUND_NAMES[ROUND_NAMES.length - champRounds() + r];
 // =====================================================================
 const DEFAULTS = {
   mode: 'practice', aim: true, pockets: 'standard', power: 1.3, bridge: 0.25,
-  hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, follow: 'aim', cueStyle: 'pro', rests: 'off', legs: true, sound: true, tableY: 0.76,
+  hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, follow: 'aim', cueStyle: 'pro', rests: 'off', restCue: 'separate', legs: true, sound: true, tableY: 0.76,
   opponent: 8, bestOf: 3, reds: 15, champLevel: 'amateur', champLength: 'short', champSize: 16,
   referee: 'male', coachVoice: 'male', hands: 'medium', figure: true, rules: 'pro',
 };
@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 60;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 61;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3670,6 +3670,10 @@ const tableRows = [
     { t: () => 'Beyond the table', on: () => settings.board !== 'centre', act: () => { settings.board = 'far'; } },
     { t: () => 'Over the middle', on: () => settings.board === 'centre', act: () => { settings.board = 'centre'; } },
   ] },
+  { label: 'Headset rest', btns: [
+    { t: () => 'Cue separate', on: () => settings.restCue !== 'auto', act: () => { settings.restCue = 'separate'; } },
+    { t: () => 'Cue in rest', on: () => settings.restCue === 'auto', act: () => { settings.restCue = 'auto'; } },
+  ] },
   { label: 'Headset aim', btns: [
     { t: () => 'Steadied', on: () => settings.aimSteady !== false, act: () => { settings.aimSteady = true; } },
     { t: () => 'Raw', on: () => settings.aimSteady === false, act: () => { settings.aimSteady = false; } },
@@ -4134,7 +4138,14 @@ function updateHeadsetCue(dt, now) {
     table.updateMatrixWorld();
     const inv = table.quaternion.clone().invert();
     const h = table.worldToLocal(bridgeHand.grip.position.clone());
-    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(bridgeHand.grip.quaternion).applyQuaternion(inv);
+    // The way the rest points: along your hand, turned by however you've adjusted your hold on it
+    const gq = bridgeHand.grip.quaternion;
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(cueState.rest && cueState.rest.qOff ? gq.clone().multiply(cueState.rest.qOff) : gq).applyQuaternion(inv);
+    // Take hold so that the rest points (from where your hand is) along `dLocal`, with no jump
+    const holdAlong = (rs, dLocal) => {
+      const dW = dLocal.clone().applyQuaternion(table.quaternion).normalize();
+      rs.qOff = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), dW.applyQuaternion(gq.clone().invert()));
+    };
     // The butt can't go through the cushion or rail
     const under = surfaceUnder(h); if (under > -1) h.y = Math.max(h.y, under + 0.016);
     const natural = REST_INFO[cueState.need].head, longest = REST_LEN[cueState.need] - 0.1;
@@ -4143,9 +4154,17 @@ function updateHeadsetCue(dt, now) {
     if (!rs || rs.kind !== cueState.need) {
       // You take hold of it at the point on the shaft that puts its head just behind the cue ball
       const ax = cueBall.x - h.x, az = cueBall.z - h.z, n = Math.hypot(ax, az) || 1;
-      rs = cueState.rest = { kind: cueState.need, down: false, head: new THREE.Vector3(), lift: 0, reach: holdAt(n - BRIDGE_BACK) };
+      // (but never closer than 60 cm to the head: you hold a rest well back)
+      rs = cueState.rest = { kind: cueState.need, down: false, head: new THREE.Vector3(), lift: 0, reach: Math.max(0.6, holdAt(n - BRIDGE_BACK)) };
     }
-    if (!cueState.locked) {
+    // Holding the grip button with the rest up lets your hand slide along the shaft: the rest stays where it is
+    const sliding = settings.restCue !== 'auto' && !rs.down && btn(bridgeHand, 1);
+    if (sliding !== !!rs.sliding) {
+      rs.sliding = sliding;
+      if (!sliding) { const d = rs.head.clone().sub(h); rs.reach = holdAt(d.length()); holdAlong(rs, d); }   // let go: hold it here
+      pulse(bridgeHand, 0.3, 30);
+    }
+    if (!cueState.locked && !sliding) {
       const reach = rs.reach, tip = h.clone().addScaledVector(f, reach);   // where the head would be, held rigidly in your hand
       const g = surfaceUnder(tip);
       if (!rs.down) {
@@ -4165,7 +4184,10 @@ function updateHeadsetCue(dt, now) {
         if (off > 0.04) rs.hold.lerp(h, (off - 0.04) / off);
         const above = tip.y - Math.max(0, g);
         rs.above = rs.above === undefined ? above : rs.above + (above - rs.above) * Math.min(1, dt * 5);
-        if (rs.above > 0.12) { rs.down = false; rs.hold = null; rs.above = undefined; rs.reach = holdAt(Math.hypot(rs.head.x - h.x, rs.head.z - h.z)); rs.head.copy(h).addScaledVector(f, rs.reach); rs.lift = 0; }   // lifted clear
+        if (rs.above > 0.12) {                                          // lifted clear, as your wrist tips it up
+          rs.down = false; rs.hold = null; rs.above = undefined; rs.lift = 0;
+          rs.reach = holdAt(Math.hypot(rs.head.x - h.x, rs.head.z - h.z)); rs.head.copy(h).addScaledVector(f, rs.reach);
+        }
         else {
           rs.lift = Math.max(0, Math.min(0.02, (rs.above - 0.04) * 0.3));
           const hp = rs.hold, head = rs.head, vx = hp.x - head.x, vz = hp.z - head.z, dd = Math.hypot(vx, vz) || 1;
@@ -4202,9 +4224,21 @@ function updateHeadsetCue(dt, now) {
     const t0 = -b - Math.sqrt(disc);
     return t0 > 0.08 && offset > t0 - 0.03 ? t0 - 0.03 : offset;
   };
+  // With the cue separate from the rest, the cue goes where your cue hand points; bring it to the top of the rest's
+  // head (once the rest is down on the cloth) and it settles in, and from then on the rest is your bridge. Point it
+  // well away and it comes out again.
+  const sepRest = settings.restCue !== 'auto' && !!cueState.rest && !!cueState.restAt && (cueState.need || 'none') !== 'none';
+  if (!sepRest) cueState.seated = false;
   const freeDir = () => {
     let dir, offset;
-    if (bridgeHand && bridgeAt.distanceTo(back) > 0.07) {
+    if (sepRest) {
+      const ctl = new THREE.Vector3(0, 0, -1).applyQuaternion(cueHand.ray.quaternion), N = cueState.restAt;
+      const v = N.clone().sub(back), t = v.dot(ctl), perp = v.clone().addScaledVector(ctl, -t).length(), toN = v.clone().normalize();
+      if (!cueState.seated && cueState.rest.down && t > 0.25 && perp < 0.04) { cueState.seated = true; pulse(cueHand, 0.45, 45); }
+      else if (cueState.seated && (!cueState.rest.down || ctl.dot(toN) < Math.cos(0.16))) { cueState.seated = false; pulse(cueHand, 0.25, 30); }
+      if (cueState.seated) { dir = toN; offset = behindBall(dir, v.length() + settings.bridge); }
+      else { dir = ctl; offset = behindBall(dir, 1.0); }
+    } else if (bridgeHand && bridgeAt.distanceTo(back) > 0.07) {
       const d = tmpV2.copy(bridgeAt).sub(back); dir = d.clone().normalize();
       offset = behindBall(dir, d.length() + settings.bridge);
     } else {
@@ -4226,7 +4260,7 @@ function updateHeadsetCue(dt, now) {
     return { dir, offset, back: lifted.tip.clone().addScaledVector(dir, -offset) };
   };
 
-  if (trigger && !cueState.locked) {
+  if (trigger && !cueState.locked && (!sepRest || cueState.seated)) {     // on the rest, only once the cue is in it
     const f = freeDir();
     cueState.locked = true; cueState.dir.copy(f.dir); cueState.offset = f.offset;
     cueState.anchor.copy(f.back); cueState.s0 = tmpV.copy(back).sub(f.back).dot(f.dir); cueState.history = []; cueState.prevLocal = null;
@@ -4273,7 +4307,9 @@ function updateHeadsetCue(dt, now) {
     const ready = canShoot() && !ballInHand && tableGlide.t < 0;
     const want = !ready ? 'none' : cueState.locked ? cueState.need || 'none' : reachNeed(balls, cueBall, dl.x, dl.z);
     if (want === (cueState.need || 'none')) cueState.needT = 0;
-    else if (!ready || (cueState.needT = (cueState.needT || 0) + dt) > 0.35) {
+    // (with the cue separate, a rest you've put down, or have your cue in, stays until the shot; one still in your
+    // hand goes only after a second and a half, so it isn't snatched away while you move the cue about)
+    else if (!ready || (cueState.needT = (cueState.needT || 0) + dt) > (!sepRest ? 0.35 : cueState.rest.down || cueState.seated ? Infinity : 1.5)) {
       if (want !== 'none' && bridgeHand) { pulse(bridgeHand, 0.5, 50); setTimeout(() => pulse(bridgeHand, 0.5, 50), 140); }
       cueState.need = want; cueState.needT = 0;
     }
