@@ -191,7 +191,7 @@
     <h2>Quest controls</h2>
     <dl>
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
-      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand holds it and it points where your hand points, coming out raised (hold the grip button to slide your hand along it). Tip your wrist down to set its head on the cloth behind the cue ball, then bring your cue to the top of the head: it settles in with a buzz and you can cue (point well away to take it out). With Headset rest set to Cue in rest, the cue is always lined up through the head instead. Once down, swing the butt left or right to turn the rest about its head, tilt your wrist up slightly to lift the head a touch, or further to lift it clear. Rests are a fixed length: pull back past the end and the head is dragged with you. For a rest shot the table glides round to put you at the cushion. Your cue hand plays the shot. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
+      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand holds it and it points where your hand points, coming out raised (hold the grip button to slide your hand along it). Tip your wrist down to set its head on the cloth behind the cue ball, then bring your cue to the top of the head: it settles in with a buzz and you can cue (point well away to take it out). With Headset rest set to Cue in rest, the cue is always lined up through the head instead. Once down, swing the butt left or right to turn the rest about its head, tilt your wrist up slightly to lift the head a touch, or further to lift it clear. Rests are a fixed length: pull back past the end and the head is dragged with you. For a rest shot the table glides round to put you at the cushion. Your cue hand plays the shot. When you need one depends on your height (Settings): at 6 ft you'll bridge by hand until the cue ball is about 5 ft past the baulk line (from the cushion behind you). Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
       <dt>Trigger + left stick</dt><dd>While the cue is locked, push left or right to fine-tune the aim (a gentle push for the smallest changes; a tick every 0.1°)</dd>
       <dt>Left stick</dt><dd>Slide the table around</dd>
       <dt>Right stick</dt><dd>Left/right rotates the table round you</dd>
@@ -333,7 +333,7 @@ const roundName = r => ROUND_NAMES[ROUND_NAMES.length - champRounds() + r];
 // =====================================================================
 const DEFAULTS = {
   mode: 'practice', aim: true, pockets: 'standard', power: 1.3, bridge: 0.25,
-  hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, follow: 'aim', cueStyle: 'pro', rests: 'off', restCue: 'separate', legs: true, sound: true, tableY: 0.76,
+  hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, follow: 'aim', cueStyle: 'pro', rests: 'off', restCue: 'separate', height: 178, legs: true, sound: true, tableY: 0.76,
   opponent: 8, bestOf: 3, reds: 15, champLevel: 'amateur', champLength: 'short', champSize: 16,
   referee: 'male', coachVoice: 'male', hands: 'medium', figure: true, rules: 'pro',
 };
@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 63;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 64;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -649,6 +649,7 @@ const woodMat = patchEnv(new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: 
 const darkWoodMat = patchEnv(new THREE.MeshStandardMaterial({ color: 0x9a7a6a, map: woodTex, roughness: 0.45, dithering: true }));
 const throatMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 1, side: THREE.DoubleSide });
 const leatherMat = patchEnv(new THREE.MeshStandardMaterial({ color: 0xe9dfc8, roughness: 0.45, dithering: true }));
+const skirtMat = patchEnv(new THREE.MeshStandardMaterial({ color: 0xd9ccb0, roughness: 0.7, dithering: true }));   // the thinner leather below the pad
 const netTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d');
@@ -791,13 +792,35 @@ function buildTableMeshes() {
     lip.rotation.z = outward - span / 2;
     lip.position.set(p.x, railTop - 0.006, p.z);
     tableStatic.add(lip);
-    // The leather: a padded piece about an inch deep round the back of the hole, flush with the rail
-    const toEdge = p.type === 'corner' ? Xo - Math.abs(p.x) : Zo - Math.abs(p.z);
-    const Rw = toEdge + 0.003, half = p.type === 'corner' ? Math.PI / 4 + Math.acos(Math.min(1, toEdge / Rw)) : Math.PI / 2;
-    const top = new THREE.Mesh(new THREE.RingGeometry(p.rc + 0.02, Rw, 40, 1, -(outward + half), 2 * half), leatherMat);
-    top.rotation.x = -Math.PI / 2; top.position.set(p.x, railTop + 0.003, p.z); tableStatic.add(top);
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(Rw, Rw, 0.026, 40, 1, true, Math.PI / 2 - outward - half, 2 * half), leatherMat);
-    pad.position.set(p.x, railTop + 0.003 - 0.013, p.z); tableStatic.add(pad);
+    // The leather pocket: it takes the place of the wooden rail round the hole, out to the edge of the table. The
+    // padded top is about an inch deep and stands a touch proud; below it a thinner leather skirt runs down to the
+    // underside of the rail.
+    {
+      const r = p.rc - 0.002, ax = Math.abs(p.x), az = Math.abs(p.z);   // (just inside the wood, so it lines the hole too)
+      const shape = e => {
+        let pts;
+        if (p.type === 'corner') {
+          const hz = Math.sqrt(Math.max(0, r * r - (Xb - ax) ** 2)), hx = Math.sqrt(Math.max(0, r * r - (Zb - az) ** 2));
+          const zA = az - hz - 0.02, xB = ax - hx - 0.02, cc = 0.1;
+          pts = [[Xo + e, zA], [Xo + e, Zo - cc]];
+          for (let i = 1; i < 10; i++) { const a = (i / 10) * Math.PI / 2; pts.push([Xo - cc + Math.cos(a) * (cc + e), Zo - cc + Math.sin(a) * (cc + e)]); }
+          pts.push([Xo - cc, Zo + e], [xB, Zo + e], [xB, Zb]);
+          const a1 = Math.atan2(Zb - az, ax - hx - ax), a2 = Math.atan2(az - hz - az, Xb - ax);
+          pts.push(...arcPts(ax, az, r, a1, a2, Math.PI / 4, 16).map(([x, z]) => [x, z]));
+          pts.push([Xb, zA]);
+          pts = pts.map(([x, z]) => [x * p.sx, z * p.sz]);
+        } else {
+          const hx = Math.sqrt(Math.max(0, r * r - (Zb - az) ** 2)), w = hx + 0.025;
+          pts = [[w, Zo + e], [-w, Zo + e], [-w, Zb], [-hx, Zb]];
+          pts.push(...arcPts(0, az, r, Math.atan2(Zb - az, -hx), Math.atan2(Zb - az, hx), Math.PI / 2, 16));
+          pts.push([hx, Zb], [w, Zb]);
+          pts = pts.map(([x, z]) => [x, z * p.sz]);
+        }
+        return pts;
+      };
+      tableStatic.add(extrudeXZ(shape(0.004), [], railTop - 0.023, railTop + 0.003, leatherMat));     // the padded top
+      tableStatic.add(extrudeXZ(shape(0.0015), [], -0.077, railTop - 0.023, skirtMat));                // the skirt
+    }
     // The runner, outside the apron: short and fairly steep. The corner pockets' run along the side towards the
     // middle; the middle pockets' towards the baulk end.
     const zr = p.sz * (Za + R + 0.006), len = 0.34, y0 = -0.2;
@@ -3696,6 +3719,8 @@ const tableRows = [
     { t: () => 'Beyond the table', on: () => settings.board !== 'centre', act: () => { settings.board = 'far'; } },
     { t: () => 'Over the middle', on: () => settings.board === 'centre', act: () => { settings.board = 'centre'; } },
   ] },
+  { label: 'Your height', btns: [[168, "5ft 6"], [178, "5ft 10"], [183, "6ft"], [191, "6ft 3"]].map(([cm, t]) =>
+    ({ t: () => t, on: () => (settings.height || 178) === cm, act: () => { settings.height = cm; } })) },
   { label: 'Headset rest', btns: [
     { t: () => 'Cue separate', on: () => settings.restCue !== 'auto', act: () => { settings.restCue = 'separate'; } },
     { t: () => 'Cue in rest', on: () => settings.restCue === 'auto', act: () => { settings.restCue = 'auto'; } },
@@ -4717,7 +4742,24 @@ function updateHands(show, tip, dir, gripPoint, bridgePoint, restHold = null) {
 //  hand would be over the table, an extension on the cue as well; and if a ball sits where the rest's head must
 //  go, the spider (to raise the cue over it) or the swan (to reach round a ball close behind the cue ball).
 // =====================================================================
-const REACH = 0.95, BRIDGE_BACK = 0.28, CUE_REACH = 1.6, EXT_REACH = 2.05;
+const BRIDGE_BACK = 0.28;
+// How far a player can reach, measured from the outside edge of the table back along the shot, for a player of
+// this height (cm): with the bridge hand on the cloth (a 6 ft player, stretching, bridges by hand until the cue ball
+// is about 5 ft past the baulk line); then the rest; then the rest with an extension when the cue hand would be
+// too far over; and the long rest with an extended cue near the far cushion.
+function reaches(h) {
+  const bridge = 2.14 + (h - 183) * 0.012;
+  return { bridge, cue: bridge + 0.85, ext: bridge + 1.2 };
+}
+// The height of whoever is at the table: you, or the computer player whose turn it is (each has their own)
+function shooterHeight() {
+  if (typeof isAITurn === 'function' && isAITurn()) {
+    const p = AI_PLAYERS[game.players[game.current].ai], name = (p && p.name) || '';
+    let hsh = 0; for (const c of name) hsh = (hsh * 31 + c.charCodeAt(0)) % 9973;
+    return 165 + hsh % 28;                                             // 165 to 192 cm
+  }
+  return settings.height || 178;
+}
 const REST_INFO = {
   none:      { name: '',                           aim: 0,    speed: 9,   spin: 1,    head: 0 },
   rest:      { name: 'the rest',                   aim: 0.04, speed: 5.0, spin: 0.7,  head: 0.057 },
@@ -4737,10 +4779,10 @@ function edgeBehind(x, z, dirX, dirZ) {
   if (Math.abs(uz) > 1e-9) t = Math.min(t, ((uz > 0 ? hz : -hz) - z) / uz);
   return t;
 }
-function reachNeed(list, cue, dirX, dirZ) {
+function reachNeed(list, cue, dirX, dirZ, height = shooterHeight()) {
   if (!restsOn() || settings.mode === 'coach' || !cue.onTable) return 'none';
   const n = Math.hypot(dirX, dirZ) || 1; dirX /= n; dirZ /= n;
-  const back = edgeBehind(cue.x, cue.z, dirX, dirZ);
+  const back = edgeBehind(cue.x, cue.z, dirX, dirZ), { bridge: REACH, cue: CUE_REACH, ext: EXT_REACH } = reaches(height);
   if (back - BRIDGE_BACK <= REACH) return 'none';                      // your bridge hand reaches the cloth
   let block = null;                                                    // a ball where the rest's head has to go
   for (const b of list) {
