@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 53;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 54;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -5640,12 +5640,12 @@ function updateDesktop(dt) {
   // The rest (if this shot needs one) under the cue, its shaft off to your bridge-hand side. The spider and the swan
   // hold the cue up high, so it's shown sloping down to the ball over them.
   desk.need = show && !ballInHand ? reachNeed(balls, cueBall, ax, az) : 'none';
-  const restBack = BRIDGE_BACK + desk.power * 0.25;
-  const restElev = desk.need === 'spider' || desk.need === 'swan' ? Math.atan2(REST_INFO[desk.need].head - R + 0.006, restBack + 0.01) : 0;
+  // The rest stands a fixed distance behind the ball; the cue draws back through it as you build up power
+  const restElev = desk.need === 'spider' || desk.need === 'swan' ? Math.atan2(REST_INFO[desk.need].head - R + 0.006, BRIDGE_BACK + 0.01) : 0;
   if (show) placeCueBehindBall(cue, ax, az, 0.01 + desk.power * 0.25, desk.tipX * 0.5, desk.tipY * 0.5, Math.max(desk.elev * Math.PI / 180, restElev));
   if (desk.need !== 'none') {
     const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(cue.quaternion);
-    placeRest(playerRest, desk.need, cue.position.clone().addScaledVector(cdir, -restBack), cdir, settings.hand === 'right' ? 'left' : 'right');
+    placeRest(playerRest, desk.need, cue.position.clone().addScaledVector(cdir, -(BRIDGE_BACK - desk.power * 0.25)), cdir, settings.hand === 'right' ? 'left' : 'right');
   } else placeRest(playerRest, 'none');
   setExtension(cue, desk.need);
   // Cue view: the camera sits low behind the cue ball and turns with the aim
