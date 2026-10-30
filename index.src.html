@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 58;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 59;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3008,6 +3008,8 @@ function* aiThink(profile) {
     else score = 1 - leaveDanger(sim.list, ballOnAfterMiss(ballOn, redsLeftIn(sim.list)));
     // A thin contact this player might miss altogether is worth less
     score = (1 - missChance) * score + missChance * -0.9;
+    // Getting the rest out for a safety is awkward and less accurate: nobody does it if a plain shot will do
+    if (restsOn()) score -= REST_AWKWARD[reachNeed(base, base[0], dirX, dirZ)];
     const shot = { score, dirX, dirZ, speed, side, height, elev, kind: elev ? 'swerve' : 'safety' };
     if (!j.foul) { safeList.push(shot); if (!safe || score > safe.score) safe = shot; }
     else if (!leastBad || score > leastBad.score) leastBad = shot;      // only if nothing legal can be found at all
@@ -3076,7 +3078,7 @@ function* aiThink(profile) {
     const targets = base.map((b, i) => i).filter(i => i > 0 && base[i].onTable && pred(base[i]))
       .sort((i, j) => Math.hypot(base[i].x - cue.x, base[i].z - cue.z) - Math.hypot(base[j].x - cue.x, base[j].z - cue.z))
       .slice(0, profile.safety >= 0.9 ? 5 : 4);
-    const offsets = profile.safety >= 0.9 ? [-0.9, -0.65, -0.35, 0.35, 0.65, 0.9] : [-0.85, -0.5, 0.5, 0.85];
+    const offsets = profile.safety >= 0.9 ? [-0.9, -0.65, -0.35, 0, 0.35, 0.65, 0.9] : [-0.85, -0.5, 0, 0.5, 0.85];
     const speeds = profile.safety >= 0.75 ? [0.9, 1.6, 2.6] : [1.0, 2.0];
     for (const ti of targets) {
       const t = base[ti];
@@ -3116,7 +3118,7 @@ function* aiThink(profile) {
     let bestRobust = null;
     for (const c of safeList.slice(0, 8)) {
       let fouls = 0;
-      const wobble = Math.max(2.5 * sigma, 0.002);
+      const wobble = Math.max(1.2 * sigma, 0.002);       // a typical error for this player, not a rare one
       // Swerves are also checked with a little more or less side and elevation
       const tries = [[wobble, 1, 0, 0], [-wobble, 1, 0, 0], [0, 0.85, 0, 0], [wobble, 0.9, 0, 0], [-wobble, 0.9, 0, 0]];
       if (c.elev) {
@@ -4644,6 +4646,8 @@ const REST_INFO = {
   swan:      { name: 'the swan',                   aim: 0.08, speed: 4.2, spin: 0.5,  head: 0.08 },
 };
 const restsOn = () => settings.rests === 'guided' || settings.rests === 'visual';
+// How much less a computer player likes a safety that needs each rest
+const REST_AWKWARD = { none: 0, rest: 0.12, extension: 0.18, long: 0.3, spider: 0.22, swan: 0.22 };
 // How far it is from the cue ball back along the line of the shot to the outside of the table
 function edgeBehind(x, z, dirX, dirZ) {
   const hx = L / 2 + CUSH_W + RAIL_W, hz = W / 2 + CUSH_W + RAIL_W, ux = -dirX, uz = -dirZ;
