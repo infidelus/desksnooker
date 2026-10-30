@@ -349,7 +349,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 40;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 41;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3754,8 +3754,15 @@ function axis(h, i) {
   const v = (Math.abs(a) - dz) / (1 - dz);
   return Math.sign(a) * v * v;
 }
+// A buzz in the controller. Very short, faint pulses can't be felt on the Quest 3, so there's a floor on both.
 function pulse(h, strength, ms) {
-  try { h?.source.gamepad?.hapticActuators?.[0]?.pulse(strength, ms); } catch (e) { /* no haptics */ }
+  strength = Math.min(1, Math.max(0.35, strength)); ms = Math.max(35, ms);
+  const gp = h && h.source && h.source.gamepad;
+  if (!gp) return;
+  try {
+    if (gp.hapticActuators && gp.hapticActuators[0]) gp.hapticActuators[0].pulse(strength, ms);
+    else if (gp.vibrationActuator) gp.vibrationActuator.playEffect('dual-rumble', { duration: ms, strongMagnitude: strength, weakMagnitude: strength });
+  } catch (e) { /* no haptics */ }
 }
 
 const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpQ = new THREE.Quaternion();
@@ -3838,7 +3845,7 @@ const rightStick = { mode: null, held: 0 };
 function rightStickAxes(dt) {
   const r = hands.right;
   const grip = !!r && btn(r, 1) && grabbedCue !== r;
-  if (grip !== rightStick.grip) { rightStick.grip = grip; if (grip) pulse(r, 0.12, 15); }   // a tick: you're in height mode
+  if (grip !== rightStick.grip) { rightStick.grip = grip; if (grip) pulse(r, 0.45, 45); }   // a buzz: you're in height mode
   if (grip) return [0, axis(r, 3)];
   const gp = r && r.source.gamepad;
   const rawX = gp ? gp.axes[2] || 0 : 0, rawY = gp ? gp.axes[3] || 0 : 0;
@@ -3921,7 +3928,7 @@ function updateHeadsetCue(dt, now) {
   const bridgeAt = bridgeHand ? railBridge(bridgeHand.grip.position) : null;
   if (bridgeHand) {
     bridgeMarker.position.copy(bridgeAt);
-    if (bridgeAt.onRail !== cueState.onRail) { if (bridgeAt.onRail) pulse(bridgeHand, 0.2, 15); cueState.onRail = bridgeAt.onRail; }   // a tick as it settles on the rail
+    if (bridgeAt.onRail !== cueState.onRail) { if (bridgeAt.onRail) pulse(bridgeHand, 0.4, 40); cueState.onRail = bridgeAt.onRail; }   // a tick as it settles on the rail
   }
   if (!cueHand || menuOpen || grabbedCue) { cue.visible = false; cueState.locked = false; cueState.prevLocal = null; updateHands(false); return; }
 
