@@ -8,6 +8,7 @@ A realistic snooker game for the Meta Quest 3 that runs straight from the browse
 - **Rules:** full professional rules, including foul and a miss, free balls, touching ball, push strokes, re-spotted black and colour nomination, with a referee who calls the score.
 - **Opponents:** 24 computer players, from pub regular to snooker legend. The weakest go for the easiest pot and miss plenty; the best pot reliably, play safe, escape snookers and think two shots ahead for position.
 - **Championship:** an 8- or 16-player championship with an amateur or pro field, played in an arena with a crowd, applause and a live scoreboard, and a trophy for the winner.
+- **Rests (optional):** shots you couldn't reach in real life are played on the rest, with an extension, the long rest, the spider or the swan as needed, held in your bridge hand. Guided mode makes them harder to play, as they are for real.
 - **Online matches:** play someone on another computer or headset, with voice chat. One player hosts and gets a five-digit room code; the other joins with it. Players connect directly (WebRTC, via the free PeerJS service), so there's no server to run.
 - **Coach:** seven lessons (cue-ball control, cut angles, doubles, one- and two-cushion escapes, swerve and the break-off), plus a tip for any position in practice.
 - **Venues:** a snooker club with a bar and trophy cabinet, the championship arena, or your own room in passthrough.

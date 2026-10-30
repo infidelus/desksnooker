@@ -191,6 +191,7 @@
     <h2>Quest controls</h2>
     <dl>
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
+      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand places its head on the cloth and holds its handle, your cue hand plays the shot. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
       <dt>Trigger + left stick</dt><dd>While the cue is locked, push left or right to fine-tune the aim (a gentle push for the smallest changes; a tick every 0.1°)</dd>
       <dt>Left stick</dt><dd>Slide the table around</dd>
       <dt>Right stick</dt><dd>Left/right rotates the table round you</dd>
@@ -332,7 +333,7 @@ const roundName = r => ROUND_NAMES[ROUND_NAMES.length - champRounds() + r];
 // =====================================================================
 const DEFAULTS = {
   mode: 'practice', aim: true, pockets: 'standard', power: 1.3, bridge: 0.25,
-  hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, follow: 'aim', cueStyle: 'pro', legs: true, sound: true, tableY: 0.76,
+  hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, follow: 'aim', cueStyle: 'pro', rests: 'off', legs: true, sound: true, tableY: 0.76,
   opponent: 8, bestOf: 3, reds: 15, champLevel: 'amateur', champLength: 'short', champSize: 16,
   referee: 'male', coachVoice: 'male', hands: 'medium', figure: true, rules: 'pro',
 };
@@ -350,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 45;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 46;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1928,7 +1929,18 @@ function aimedColour(dirX, dirZ) {
 // Live strike of the cue ball
 function strikeCueBall(dirX, dirZ, speed, r, elev = 0) {
   if (!canShoot(true) && !net.applying) return false;
-  const pre = balls.map(b => [b.x, b.z, b.onTable]), args = { dirX, dirZ, speed, r: { x: r.x, y: r.y, z: r.z }, elev };
+  const pre = balls.map(b => [b.x, b.z, b.onTable]);
+  // On the rest (guided): your own shots wander a little; everyone's get less power and spin
+  const need = net.applying ? 'none' : reachNeed(balls, cueBall, dirX, dirZ);
+  if (need !== 'none' && settings.rests === 'guided') {
+    if (!isAITurn()) {
+      const e = gauss() * REST_INFO[need].aim * Math.PI / 180, c = Math.cos(e), sn = Math.sin(e), side = (r.x * -dirZ + r.z * dirX) / R, height = r.y / R;
+      [dirX, dirZ] = [dirX * c - dirZ * sn, dirX * sn + dirZ * c];
+      r = contactPoint(dirX, dirZ, side, height);
+    }
+    ({ speed, r } = restLimits(need, dirX, dirZ, speed, r));
+  }
+  const args = { dirX, dirZ, speed, r: { x: r.x, y: r.y, z: r.z }, elev };
   initAudio();
   takeSnapshot();
   const nominated = game.freeBall && game.freeBall.nominated;
@@ -2808,8 +2820,10 @@ function* aiThink(profile) {
   for (const o of options) {
     if (avoided(o.dirX, o.dirZ)) { o.fouled = true; continue; }
     const v0 = potSpeed(o);
-    for (const sm of [...profile.speeds, profile.speeds[profile.speeds.length - 1] * 1.4]) for (const h of profile.spins) {
-      const speed = Math.min(5.5, v0 * sm);                   // firm, but nobody slams every pot
+    o.need = settings.rests === 'guided' ? reachNeed(base, base[0], o.dirX, o.dirZ) : 'none';
+    const lim = REST_INFO[o.need];
+    for (const sm of [...profile.speeds, profile.speeds[profile.speeds.length - 1] * 1.4]) for (const h0 of profile.spins) {
+      const speed = Math.min(5.5, lim.speed, v0 * sm), h = h0 * lim.spin;     // firm, but nobody slams every pot
       // A quick first look; the best few are then checked at the real table's fine step (below),
       // as the quick one is sometimes too kind in the jaws
       const sim = simulate(base, o.dirX, o.dirZ, speed, 0, h);
@@ -2829,7 +2843,7 @@ function* aiThink(profile) {
       const pos = profile.think > 0 && profile.position > 0 && nextOk ? positionValue(sim.list, next, sigma) : 0.5;
       const worth = 1 + j.points * 0.04 + profile.position * pos;
       const score = o.p * worth - (1 - o.p) * 0.55;
-      potCands.push({ score, worth, pos, next, points: j.points, p: o.p, dirX: o.dirX, dirZ: o.dirZ, speed, side: 0, height: h, kind: 'pot', ti: o.ti, pocket: o.pocket, dropSpeed: sim.ctx.dropSpeed && sim.ctx.dropSpeed.get(sim.list[o.ti]) });
+      potCands.push({ score, worth, pos, next, points: j.points, p: o.p, need: o.need, dirX: o.dirX, dirZ: o.dirZ, speed, side: 0, height: h, kind: 'pot', ti: o.ti, pocket: o.pocket, dropSpeed: sim.ctx.dropSpeed && sim.ctx.dropSpeed.get(sim.list[o.ti]) });
     }
   }
   // The best few pots, checked properly: the balls throw each other slightly, so the aim that really pots the ball
@@ -2882,7 +2896,8 @@ function* aiThink(profile) {
     const dv = Math.max(1.5 * profile.speed, 0.04);
     const paceOk = (pots(0, 1 - dv) ? 0.5 : 0) + (pots(0, 1 + dv) ? 0.5 : 0);
     yield;
-    const rate = erf(half / (sigmaDeg * Math.SQRT2)) * (0.6 + 0.4 * paceOk);
+    const sig = Math.hypot(sigmaDeg, REST_INFO[c.need || 'none'].aim);         // harder to aim on the rest
+    const rate = erf(half / (sig * Math.SQRT2)) * (0.6 + 0.4 * paceOk);
     let worth = c.worth;
     if (profile.think >= 2 && profile.position > 0) worth = 1 + c.points * 0.04 + profile.position * (0.5 * c.pos + 0.5 * (yield* twoAhead(c)));
     const score = rate * worth - (1 - rate) * 0.55;
@@ -3193,7 +3208,8 @@ function updateAI(dt) {
   if (ai.t >= 2.1 && gap === 0) {
     opp.hold = { tip: toTable(aiCue.position), quat: qToTable(aiCue.quaternion) };
     ai.plan = null; ai.glide = 0;
-    const err = gauss() * profile.aim * Math.PI / 180;
+    const restAim = settings.rests === 'guided' ? REST_INFO[reachNeed(balls, cueBall, p.dirX, p.dirZ)].aim : 0;
+    const err = gauss() * Math.hypot(profile.aim, restAim) * Math.PI / 180;
     const c = Math.cos(err), s = Math.sin(err);
     const dx = p.dirX * c - p.dirZ * s, dz = p.dirX * s + p.dirZ * c;
     const speed = Math.max(0.3, p.speed * (1 + gauss() * profile.speed));
@@ -3502,6 +3518,11 @@ const playRows = [
     { t: () => 'New championship', w: 2, act: () => newChampionship() },
     { t: () => 'Amateur field', on: () => settings.champLevel === 'amateur', act: () => { settings.champLevel = 'amateur'; } },
     { t: () => 'Pro field', on: () => settings.champLevel === 'pro', act: () => { settings.champLevel = 'pro'; } },
+  ] },
+  { label: 'Rests', btns: [
+    { t: () => 'Off', on: () => !restsOn(), act: () => { settings.rests = 'off'; } },
+    { t: () => 'Guided', on: () => settings.rests === 'guided', act: () => { settings.rests = 'guided'; } },
+    { t: () => 'Show only', on: () => settings.rests === 'visual', act: () => { settings.rests = 'visual'; } },
   ] },
   { label: 'Rules', btns: [
     { t: () => 'Club', on: () => settings.rules === 'club', act: () => { settings.rules = 'club'; } },
@@ -3996,11 +4017,17 @@ function updateHeadsetCue(dt, now) {
   const cueHand = hands[settings.hand], bridgeHand = hands[settings.hand === 'right' ? 'left' : 'right'];
   bridgeMarker.visible = !!bridgeHand && !menuOpen && settings.hands === 'off';
   const bridgeAt = bridgeHand ? railBridge(bridgeHand.grip.position) : null;
+  // On the rest, your bridge hand places its head on the cloth and the cue lies in the top of it
+  if (bridgeAt && (cueState.need || 'none') !== 'none') {
+    table.updateMatrixWorld();
+    const q = table.worldToLocal(bridgeAt.clone()); q.y = REST_INFO[cueState.need].head + 0.006;
+    bridgeAt.copy(table.localToWorld(q)); bridgeAt.onRail = false;
+  }
   if (bridgeHand) {
     bridgeMarker.position.copy(bridgeAt);
     if (bridgeAt.onRail !== cueState.onRail) { if (bridgeAt.onRail) pulse(bridgeHand, 0.4, 40); cueState.onRail = bridgeAt.onRail; }   // a tick as it settles on the rail
   }
-  if (!cueHand || menuOpen || grabbedCue) { cue.visible = false; cueState.locked = false; cueState.prevLocal = null; updateHands(false); return; }
+  if (!cueHand || menuOpen || grabbedCue) { cue.visible = false; cueState.locked = false; cueState.prevLocal = null; updateHands(false); playerRest.g.visible = false; return; }
 
   const back = cueHand.grip.position;
   const trigger = btn(cueHand, 0) && !coach.blockTrigger;
@@ -4077,7 +4104,17 @@ function updateHeadsetCue(dt, now) {
     const gripPoint = tipWorld.clone().addScaledVector(dir, -offset);
     const handAlong = bridgeHand ? bridgeAt.clone().sub(gripPoint).dot(dir) : 0;
     const bridgePoint = !bridgeHand ? null : cueState.locked ? cueState.bridgePoint : gripPoint.clone().addScaledVector(dir, Math.max(0.05, Math.min(handAlong, offset - 0.05)));
-    updateHands(true, tipWorld, dir, gripPoint, bridgePoint);
+    // Which rest (if any) this line needs; a double buzz in the bridge hand when you first need one
+    table.updateMatrixWorld();
+    const dl = dir.clone().applyQuaternion(table.quaternion.clone().invert());
+    const need = canShoot() && !ballInHand ? reachNeed(balls, cueBall, dl.x, dl.z) : 'none';
+    if (need !== (cueState.need || 'none')) {
+      if (need !== 'none' && bridgeHand) { pulse(bridgeHand, 0.5, 50); setTimeout(() => pulse(bridgeHand, 0.5, 50), 140); }
+      cueState.need = need;
+    }
+    const restHold = need !== 'none' && bridgePoint ? placeRest(playerRest, need, bridgePoint, dir, settings.hand === 'right' ? 'left' : 'right') : placeRest(playerRest, 'none');
+    setExtension(cue, need);
+    updateHands(true, tipWorld, dir, gripPoint, bridgePoint, restHold);
   }
 
   // Tip position and direction in table space
@@ -4422,7 +4459,7 @@ function keepHandOnTop(rig, clearance = 0.007) {
 }
 
 // Called each frame in the headset with the current cue line
-function updateHands(show, tip, dir, gripPoint, bridgePoint) {
+function updateHands(show, tip, dir, gripPoint, bridgePoint, restHold = null) {
   const cueSide = settings.hand, bridgeSide = cueSide === 'right' ? 'left' : 'right';
   const gr = handRigs[cueSide], br = handRigs[bridgeSide];
   if (!gr || !br) return;
@@ -4431,11 +4468,128 @@ function updateHands(show, tip, dir, gripPoint, bridgePoint) {
   gr.setPose('grip');
   const down = new THREE.Vector3(0, -1, 0);
   gr.place(gr.F, gr.toPinky.clone().negate(), down, dir, gripPoint);
+  // On the rest: the bridge hand holds its handle, off the edge of the table
+  if (restHold) { br.setPose('grip'); br.place(br.F, br.toPinky.clone().negate(), down, restHold.shaftDir.clone().negate(), restHold.handle); return; }
   // Bridge hand: palm flat, fingers spread forward and outward, cue resting in the V of the thumb
   br.setPose('bridge');
   const flat = new THREE.Vector3(dir.x, 0, dir.z).normalize().applyAxisAngle(UP, (bridgeSide === 'left' ? 1 : -1) * 0.6);
   if (bridgePoint) { br.place(br.F, br.N, flat, down, bridgePoint); keepHandOnTop(br); }
   else br.root.visible = false;
+}
+
+// =====================================================================
+//  Realistic reach: rests, the spider, the swan and the extension
+//  You stand behind the cue ball, on the line of the shot, outside the table. If your bridge hand can't reach
+//  the cloth there you need a rest (held in your bridge hand, its shaft off to that side); if even then your cue
+//  hand would be over the table, an extension on the cue as well; and if a ball sits where the rest's head must
+//  go, the spider (to raise the cue over it) or the swan (to reach round a ball close behind the cue ball).
+// =====================================================================
+const REACH = 0.95, BRIDGE_BACK = 0.28, CUE_REACH = 1.6, EXT_REACH = 2.05;
+const REST_INFO = {
+  none:      { name: '',                           aim: 0,    speed: 9,   spin: 1,    head: 0 },
+  rest:      { name: 'the rest',                   aim: 0.12, speed: 5.0, spin: 0.7,  head: 0.055 },
+  extension: { name: 'the rest and an extension', aim: 0.2,  speed: 4.4, spin: 0.55, head: 0.055 },
+  long:      { name: 'the long rest and an extended cue', aim: 0.28, speed: 4.0, spin: 0.45, head: 0.055 },
+  spider:    { name: 'the spider',                 aim: 0.25, speed: 4.2, spin: 0.5,  head: 0.11 },
+  swan:      { name: 'the swan',                   aim: 0.25, speed: 4.2, spin: 0.5,  head: 0.08 },
+};
+const restsOn = () => settings.rests === 'guided' || settings.rests === 'visual';
+// How far it is from the cue ball back along the line of the shot to the outside of the table
+function edgeBehind(x, z, dirX, dirZ) {
+  const hx = L / 2 + CUSH_W + RAIL_W, hz = W / 2 + CUSH_W + RAIL_W, ux = -dirX, uz = -dirZ;
+  let t = Infinity;
+  if (Math.abs(ux) > 1e-9) t = Math.min(t, ((ux > 0 ? hx : -hx) - x) / ux);
+  if (Math.abs(uz) > 1e-9) t = Math.min(t, ((uz > 0 ? hz : -hz) - z) / uz);
+  return t;
+}
+function reachNeed(list, cue, dirX, dirZ) {
+  if (!restsOn() || settings.mode === 'coach' || !cue.onTable) return 'none';
+  const n = Math.hypot(dirX, dirZ) || 1; dirX /= n; dirZ /= n;
+  const back = edgeBehind(cue.x, cue.z, dirX, dirZ);
+  if (back - BRIDGE_BACK <= REACH) return 'none';                      // your bridge hand reaches the cloth
+  let block = null;                                                    // a ball where the rest's head has to go
+  for (const b of list) {
+    if (b === cue || !b.onTable || b.falling) continue;
+    const vx = b.x - cue.x, vz = b.z - cue.z, along = -(vx * dirX + vz * dirZ), lat = Math.abs(vx * dirZ - vz * dirX);
+    if (along > 0.04 && along < 0.4 && lat < R + 0.07) block = block === null ? along : Math.min(block, along);
+  }
+  // (the spider and swan may need the extension too, if it's a long way in)
+  reachNeed.ext = back > EXT_REACH ? 'long' : back > CUE_REACH ? 'extension' : 'none';
+  if (block !== null) return block < 0.15 ? 'swan' : 'spider';
+  return back > EXT_REACH ? 'long' : back > CUE_REACH ? 'extension' : 'rest';
+}
+// The equipment: a long wooden shaft with a brass head (a cross, an arch or a swan's neck)
+function makeRest() {
+  const brass = new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.3, metalness: 0.9, envMap: roomEnv });
+  const wood = new THREE.MeshStandardMaterial({ color: 0x5a3418, roughness: 0.45 });
+  const g = new THREE.Group(); g.visible = false; scene.add(g);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 1, 10), wood); g.add(shaft);
+  const heads = {};
+  { // the cross: two crossed bars with a notch at the top for the cue
+    const h = new THREE.Group();
+    for (const s of [1, -1]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.075, 0.012), brass); b.rotation.x = s * 0.62; b.position.y = 0.028; h.add(b); }
+    heads.rest = heads.extension = heads.long = h;
+  }
+  { // the spider: a tall arch that stands over a ball
+    const h = new THREE.Group();
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.005, 6, 20, Math.PI), brass); arch.rotation.y = Math.PI / 2; arch.position.y = 0.055; h.add(arch);
+    for (const s of [1, -1]) { const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.055, 6), brass); leg.position.set(0, 0.027, s * 0.055); h.add(leg); }
+    const notch = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.012, 0.03), brass); notch.position.y = 0.11; h.add(notch);
+    heads.spider = h;
+  }
+  { // the swan: a long curved neck that reaches over and round a ball
+    const h = new THREE.Group();
+    const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(-0.16, 0.02, 0), new THREE.Vector3(-0.1, 0.07, 0), new THREE.Vector3(-0.02, 0.085, 0), new THREE.Vector3(0, 0.075, 0)]);
+    h.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.005, 6), brass));
+    const fork = new THREE.Mesh(new THREE.TorusGeometry(0.01, 0.003, 6, 12, Math.PI), brass); fork.rotation.y = Math.PI / 2; fork.position.y = 0.07; h.add(fork);
+    heads.swan = h;
+  }
+  for (const h of new Set(Object.values(heads))) { h.visible = false; g.add(h); }
+  return { g, shaft, heads };
+}
+const playerRest = makeRest(), oppRest = makeRest();
+// The extension: a dark piece screwed on to the butt of the cue
+function setExtension(cueGroup, kind) {
+  if (kind === 'spider' || kind === 'swan') kind = reachNeed.ext || 'none';
+  const on = kind === 'extension' || kind === 'long';
+  let ext = cueGroup.userData.ext;
+  if (!ext) {
+    ext = new THREE.Mesh(new THREE.CylinderGeometry(0.0146, 0.0146, 0.45, 16), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.5 }));
+    ext.position.y = -1.45 - 0.225; cueGroup.add(ext); cueGroup.userData.ext = ext;
+  }
+  ext.visible = on;
+  if (on) { const len = kind === 'long' ? 0.9 : 0.45; ext.scale.y = len / 0.45; ext.position.y = -1.45 - len / 2; }
+}
+// Put a rest under a cue: its head at `point` (in the room), the cue along `dir`; the shaft runs back off the table
+// on the bridge-hand side. Returns where its handle is and which way the shaft runs, for the hand that holds it.
+function placeRest(rest, kind, point, dir, bridgeSide) {
+  for (const h of new Set(Object.values(rest.heads))) h.visible = false;
+  if (kind === 'none') { rest.g.visible = false; return null; }
+  table.updateMatrixWorld();
+  const tq = table.quaternion, inv = tq.clone().invert();
+  const p = table.worldToLocal(point.clone()), d = dir.clone().applyQuaternion(inv); d.y = 0; d.normalize();
+  const side = new THREE.Vector3(-d.z, 0, d.x).multiplyScalar(bridgeSide === 'left' ? -1 : 1);
+  const head = rest.heads[kind]; head.visible = true;
+  // The head stands on the cloth with the cue resting in its top
+  const top = Math.max(0.03, p.y - 0.006), natural = REST_INFO[kind].head;
+  head.position.set(p.x, 0, p.z); head.scale.set(1, top / natural, 1);
+  head.rotation.set(0, Math.atan2(-d.z, d.x), 0);
+  // The shaft: from the head back to a handle just off the edge of the table, angled out to the bridge-hand side
+  const back = edgeBehind(p.x, p.z, d.x, d.z) + 0.25;
+  const handle = new THREE.Vector3(p.x, 0, p.z).addScaledVector(d, -back).addScaledVector(side, 0.28); handle.y = CUSH_H + 0.06;
+  const foot = new THREE.Vector3(p.x, 0.012, p.z).addScaledVector(d, -0.03);
+  const mid = foot.clone().add(handle).multiplyScalar(0.5), len = foot.distanceTo(handle);
+  rest.shaft.position.copy(mid); rest.shaft.scale.set(1, len, 1);
+  rest.shaft.quaternion.setFromUnitVectors(UP, handle.clone().sub(foot).normalize());
+  rest.g.position.copy(table.position); rest.g.quaternion.copy(tq); rest.g.visible = true;
+  return { handle: table.localToWorld(handle.clone()), shaftDir: handle.clone().sub(foot).normalize().applyQuaternion(tq) };
+}
+// Effects on the shot, with guided rests: harder to aim, less power, less spin
+function restLimits(kind, dirX, dirZ, speed, r) {
+  const I = REST_INFO[kind];
+  if (kind === 'none' || settings.rests !== 'guided') return { speed, r };
+  const side = (r.x * -dirZ + r.z * dirX) / R, height = r.y / R;
+  return { speed: Math.min(speed, I.speed), r: contactPoint(dirX, dirZ, side * I.spin, height * I.spin) };
 }
 
 // ---------- The opponent: a pair of hands and a cue that glide in to play ----------
@@ -4449,7 +4603,7 @@ function poseOppHands(tip, quat, bridgeTip) {
   const down = new THREE.Vector3(0, -1, 0);
   const gr = opp.rigs.right, br = opp.rigs.left;
   gr.setPose('grip'); br.setPose('bridge');
-  gr.place(gr.F, gr.toPinky.clone().negate(), down, dir, tip.clone().addScaledVector(dir, -1.0));
+  gr.place(gr.F, gr.toPinky.clone().negate(), down, dir, tip.clone().addScaledVector(dir, -(opp.gripBack || 1.0)));   // further back on the rest
   const flat = new THREE.Vector3(dir.x, 0, dir.z).normalize().applyAxisAngle(UP, 0.6);
   // Bridge 30 cm behind the tip, or closer if that would be off the table; on the rail if it's off the cloth
   table.updateMatrixWorld();
@@ -4507,6 +4661,25 @@ function updateOpponent(dt) {
   oppSkin.transparent = opp.fade < 1; oppSkin.depthWrite = opp.fade >= 1;
   opp.rigs.right.root.visible = opp.rigs.left.root.visible = opp.fade > 0.01;
   if (opp.fade > 0.01 && aiCue.visible) poseOppHands(aiCue.position, aiCue.quaternion, opp.bridgeTip && fromTable(opp.bridgeTip));
+  // On the rest: their bridge (left) hand holds its handle; worked out while the balls are still
+  if (!anyMoving()) {
+    let need = 'none';
+    if (aiCue.visible && restsOn()) {
+      const d = new THREE.Vector3(0, 1, 0).applyQuaternion(aiCue.quaternion).applyQuaternion(table.quaternion.clone().invert());
+      need = reachNeed(balls, cueBall, d.x, d.z);
+    }
+    opp.need = need;
+    // On the rest the cue hand holds the cue near the butt (or the end of the extension), off the end of the table
+    const ext = need === 'spider' || need === 'swan' ? reachNeed.ext : need;
+    opp.gripBack = need === 'none' ? 1.0 : 1.32 + (ext === 'long' ? 0.9 : ext === 'extension' ? 0.45 : 0);
+  }
+  const need = aiCue.visible ? opp.need || 'none' : 'none';
+  setExtension(aiCue, need);
+  if (need === 'none' || opp.fade <= 0.01) { placeRest(oppRest, 'none'); return; }
+  const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(aiCue.quaternion);
+  const hold = placeRest(oppRest, need, aiCue.position.clone().addScaledVector(cdir, -BRIDGE_BACK), cdir, 'left');
+  const br = opp.rigs.left; br.setPose('grip');
+  br.place(br.F, br.toPinky.clone().negate(), new THREE.Vector3(0, -1, 0), hold.shaftDir.clone().negate(), hold.handle);
 }
 
 async function loadModels() {
@@ -5259,6 +5432,13 @@ function updateDesktop(dt) {
   if (plKey !== desk.playKey) { desk.playKey = plKey; desk.play = pl && pl.raised ? pl : null; drawSpinBall(); }
   cue.visible = show;
   if (show) placeCueBehindBall(cue, ax, az, 0.01 + desk.power * 0.25, desk.tipX * 0.5, desk.tipY * 0.5, desk.elev * Math.PI / 180);
+  // The rest (if this shot needs one) under the cue, its shaft off to your bridge-hand side
+  desk.need = show && !ballInHand ? reachNeed(balls, cueBall, ax, az) : 'none';
+  if (desk.need !== 'none') {
+    const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(cue.quaternion);
+    placeRest(playerRest, desk.need, cue.position.clone().addScaledVector(cdir, -(BRIDGE_BACK + desk.power * 0.25)), cdir, settings.hand === 'right' ? 'left' : 'right');
+  } else placeRest(playerRest, 'none');
+  setExtension(cue, desk.need);
   // Cue view: the camera sits low behind the cue ball and turns with the aim
   if (desk.view === 'cue' && cueBall.onTable && !anyMoving()) {
     table.updateMatrixWorld();
@@ -5271,7 +5451,8 @@ function updateDesktop(dt) {
   }
   const shown = desk.charging ? desk.power * 7 : desk.setPower;
   document.getElementById('powerFill').style.width = `${Math.round(shown / 7 * 100)}%`;
-  document.getElementById('powerText').textContent = desk.charging ? `${shown.toFixed(1)} m/s` : `${shown.toFixed(1)} m/s · Space to play`;
+  const onRest = desk.need && desk.need !== 'none' ? ` · On ${REST_INFO[desk.need].name}` : '';
+  document.getElementById('powerText').textContent = (desk.charging ? `${shown.toFixed(1)} m/s` : `${shown.toFixed(1)} m/s · Space to play`) + onRest;
   if (desk.view === 'free' && desk.recentre && !anyMoving()) {
     table.updateMatrixWorld();
     const w = table.localToWorld(new THREE.Vector3(cueBall.x, R, cueBall.z)), d = w.sub(orbit.target);
@@ -5490,7 +5671,7 @@ function setMute(m) {
 // ---------- the match ----------
 // The host's settings decide the match; both tables must be the same
 function beginOnline(s) {
-  Object.assign(settings, { bestOf: s.bestOf, reds: s.reds, rules: s.rules });
+  Object.assign(settings, { bestOf: s.bestOf, reds: s.reds, rules: s.rules, rests: s.rests || 'off' });
   if (settings.pockets !== s.pockets) { settings.pockets = s.pockets; rebuildTable(); }
   if (settings.mode === 'coach') stopCoach();
   settings.mode = 'online'; net.status = 'playing';
@@ -5542,7 +5723,7 @@ function netReceive(m) {
         setTimeout(() => netLeave(true), 500); return;
       }
       if (net.seat === 0) {
-        const s = { bestOf: settings.bestOf, reds: settings.reds, rules: settings.rules, pockets: settings.pockets };
+        const s = { bestOf: settings.bestOf, reds: settings.reds, rules: settings.rules, pockets: settings.pockets, rests: settings.rests };
         netSend({ t: 'start', s }); beginOnline(s);
       }
       return;
@@ -5618,7 +5799,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   opp, handRigs, updateHands, cue, get choice() { return choice; }, chooseOption, snookeredOnAll, get champ() { return champ; }, newChampionship, frameWon, concedeFrame, menuCanvas: menu.c, boardCanvas: board.c, drawMenu, setMenuPage: p => { menuPage = p; drawMenu(); }, AI_PLAYERS, R, L, W,
