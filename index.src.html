@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 54;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 55;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4637,9 +4637,9 @@ function updateHands(show, tip, dir, gripPoint, bridgePoint, restHold = null) {
 const REACH = 0.95, BRIDGE_BACK = 0.28, CUE_REACH = 1.6, EXT_REACH = 2.05;
 const REST_INFO = {
   none:      { name: '',                           aim: 0,    speed: 9,   spin: 1,    head: 0 },
-  rest:      { name: 'the rest',                   aim: 0.12, speed: 5.0, spin: 0.7,  head: 0.048 },
-  extension: { name: 'the rest and an extension', aim: 0.2,  speed: 4.4, spin: 0.55, head: 0.048 },
-  long:      { name: 'the long rest and an extended cue', aim: 0.28, speed: 4.0, spin: 0.45, head: 0.048 },
+  rest:      { name: 'the rest',                   aim: 0.12, speed: 5.0, spin: 0.7,  head: 0.057 },
+  extension: { name: 'the rest and an extension', aim: 0.2,  speed: 4.4, spin: 0.55, head: 0.057 },
+  long:      { name: 'the long rest and an extended cue', aim: 0.28, speed: 4.0, spin: 0.45, head: 0.057 },
   spider:    { name: 'the spider',                 aim: 0.25, speed: 4.2, spin: 0.5,  head: 0.11 },
   swan:      { name: 'the swan',                   aim: 0.25, speed: 4.2, spin: 0.5,  head: 0.08 },
 };
@@ -4691,7 +4691,8 @@ function makeRest() {
   const heads = {};
   { // the cross: two short, flat brass bars crossed at right angles, a black rubber cap on each end; the cue lies
     // in the upper V. About 7 cm across.
-    const h = new THREE.Group(), c = 0.032, e = 0.03;
+    // (raised so the lowest edge of the bottom caps just touches the cloth)
+    const h = new THREE.Group(), e = 0.027, c = e + (0.004 + 0.007 + 0.0065) * Math.SQRT1_2;
     for (const s of [1, -1]) {
       const a = V(0, c - e, -s * e), b = V(0, c + e, s * e), along = b.clone().sub(a).normalize();
       const flat = new THREE.Mesh(new THREE.BoxGeometry(0.006, a.distanceTo(b), 0.012), brass);
@@ -5638,10 +5639,10 @@ function updateDesktop(dt) {
   if (plKey !== desk.playKey) { desk.playKey = plKey; desk.play = pl && pl.raised ? pl : null; drawSpinBall(); }
   cue.visible = show;
   // The rest (if this shot needs one) under the cue, its shaft off to your bridge-hand side. The spider and the swan
-  // hold the cue up high, so it's shown sloping down to the ball over them.
+  // (and the rest's cross) hold the cue up off the cloth, so it's shown sloping down to the ball over them.
   desk.need = show && !ballInHand ? reachNeed(balls, cueBall, ax, az) : 'none';
   // The rest stands a fixed distance behind the ball; the cue draws back through it as you build up power
-  const restElev = desk.need === 'spider' || desk.need === 'swan' ? Math.atan2(REST_INFO[desk.need].head - R + 0.006, BRIDGE_BACK + 0.01) : 0;
+  const restElev = desk.need !== 'none' ? Math.atan2(REST_INFO[desk.need].head - R + 0.006, BRIDGE_BACK + 0.01) : 0;
   if (show) placeCueBehindBall(cue, ax, az, 0.01 + desk.power * 0.25, desk.tipX * 0.5, desk.tipY * 0.5, Math.max(desk.elev * Math.PI / 180, restElev));
   if (desk.need !== 'none') {
     const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(cue.quaternion);
