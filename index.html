@@ -191,7 +191,7 @@
     <h2>Quest controls</h2>
     <dl>
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
-      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand places its head on the cloth and holds its handle, your cue hand plays the shot. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
+      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: its head is set down behind the cue ball and your bridge hand holds the butt. Move the butt left, right, forwards or back to shift the head a little, raise it slightly to lift the head off the cloth, or lift it well up to pick the rest up and put it down somewhere else. Your cue hand plays the shot. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
       <dt>Trigger + left stick</dt><dd>While the cue is locked, push left or right to fine-tune the aim (a gentle push for the smallest changes; a tick every 0.1°)</dd>
       <dt>Left stick</dt><dd>Slide the table around</dd>
       <dt>Right stick</dt><dd>Left/right rotates the table round you</dd>
@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 46;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 47;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4017,12 +4017,47 @@ function updateHeadsetCue(dt, now) {
   const cueHand = hands[settings.hand], bridgeHand = hands[settings.hand === 'right' ? 'left' : 'right'];
   bridgeMarker.visible = !!bridgeHand && !menuOpen && settings.hands === 'off';
   const bridgeAt = bridgeHand ? railBridge(bridgeHand.grip.position) : null;
-  // On the rest, your bridge hand places its head on the cloth and the cue lies in the top of it
+  // On the rest, your bridge hand holds its butt. The head is planted on the cloth behind the cue ball, and moving
+  // the butt (left, right, forwards or back) moves the head a little, as a lever would; raising the butt lifts the
+  // head a touch off the cloth. Lift your hand well up and the whole rest comes with it, to put down somewhere else.
+  cueState.restAt = null;
   if (bridgeAt && (cueState.need || 'none') !== 'none') {
     table.updateMatrixWorld();
-    const q = table.worldToLocal(bridgeAt.clone()); q.y = REST_INFO[cueState.need].head + 0.006;
+    const h = table.worldToLocal(bridgeHand.grip.position.clone());
+    // The butt can't go through the cushion or rail, nor far below the cloth off the end of the table
+    const under = surfaceUnder(h); h.y = Math.max(h.y, under > -1 ? under + 0.016 : -0.1);
+    let rs = cueState.rest;
+    if (!rs || rs.kind !== cueState.need || Math.hypot(rs.cbx - cueBall.x, rs.cbz - cueBall.z) > 0.01) {
+      // First time it's needed for this shot: plant the head behind the cue ball, on the line from your hand
+      let ax = cueBall.x - h.x, az = cueBall.z - h.z; const n = Math.hypot(ax, az) || 1; ax /= n; az /= n;
+      rs = cueState.rest = { kind: cueState.need, cbx: cueBall.x, cbz: cueBall.z, carried: false,
+        planted: new THREE.Vector3(cueBall.x - ax * BRIDGE_BACK, 0, cueBall.z - az * BRIDGE_BACK), hand0: h.clone(), head: null, lift: 0 };
+    }
+    if (!cueState.locked) {
+      const up = h.y - rs.hand0.y;
+      if (!rs.carried && up > 0.07) { rs.carried = true; rs.planted.copy(rs.head); rs.planted.y = 0; rs.hand0.x = h.x; rs.hand0.z = h.z; }   // picked up
+      else if (rs.carried && up < 0.03) {                                             // put down again here
+        rs.carried = false; rs.planted.copy(rs.head); rs.planted.y = 0; rs.hand0.copy(h);
+      }
+      const head = rs.planted.clone();
+      if (rs.carried) {
+        head.x += h.x - rs.hand0.x; head.z += h.z - rs.hand0.z;
+        rs.lift = Math.min(0.15, 0.02 + (up - 0.07));
+      } else {
+        head.x += (h.x - rs.hand0.x) * 0.35; head.z += (h.z - rs.hand0.z) * 0.35;
+        rs.lift = Math.max(0, Math.min(0.02, up * 0.25));
+        rs.hand0.y = Math.min(rs.hand0.y, h.y);                                       // the lowest you've held it is "down"
+      }
+      // Keep the head on the cloth, a sensible distance behind the cue ball
+      const vx = head.x - cueBall.x, vz = head.z - cueBall.z, dd = Math.hypot(vx, vz) || 1, k = Math.max(0.1, Math.min(0.55, dd)) / dd;
+      head.x = Math.max(-L / 2 + 0.03, Math.min(L / 2 - 0.03, cueBall.x + vx * k));
+      head.z = Math.max(-W / 2 + 0.03, Math.min(W / 2 - 0.03, cueBall.z + vz * k));
+      rs.head = head;
+    }
+    const q = new THREE.Vector3(rs.head.x, REST_INFO[cueState.need].head + rs.lift + 0.006, rs.head.z);
     bridgeAt.copy(table.localToWorld(q)); bridgeAt.onRail = false;
-  }
+    cueState.restAt = bridgeAt.clone();
+  } else cueState.rest = null;
   if (bridgeHand) {
     bridgeMarker.position.copy(bridgeAt);
     if (bridgeAt.onRail !== cueState.onRail) { if (bridgeAt.onRail) pulse(bridgeHand, 0.4, 40); cueState.onRail = bridgeAt.onRail; }   // a tick as it settles on the rail
@@ -4112,7 +4147,7 @@ function updateHeadsetCue(dt, now) {
       if (need !== 'none' && bridgeHand) { pulse(bridgeHand, 0.5, 50); setTimeout(() => pulse(bridgeHand, 0.5, 50), 140); }
       cueState.need = need;
     }
-    const restHold = need !== 'none' && bridgePoint ? placeRest(playerRest, need, bridgePoint, dir, settings.hand === 'right' ? 'left' : 'right') : placeRest(playerRest, 'none');
+    const restHold = need !== 'none' && cueState.restAt ? placeRest(playerRest, need, cueState.restAt, dir, settings.hand === 'right' ? 'left' : 'right', bridgeHand.grip.position) : placeRest(playerRest, 'none');
     setExtension(cue, need);
     updateHands(true, tipWorld, dir, gripPoint, bridgePoint, restHold);
   }
@@ -4487,9 +4522,9 @@ function updateHands(show, tip, dir, gripPoint, bridgePoint, restHold = null) {
 const REACH = 0.95, BRIDGE_BACK = 0.28, CUE_REACH = 1.6, EXT_REACH = 2.05;
 const REST_INFO = {
   none:      { name: '',                           aim: 0,    speed: 9,   spin: 1,    head: 0 },
-  rest:      { name: 'the rest',                   aim: 0.12, speed: 5.0, spin: 0.7,  head: 0.055 },
-  extension: { name: 'the rest and an extension', aim: 0.2,  speed: 4.4, spin: 0.55, head: 0.055 },
-  long:      { name: 'the long rest and an extended cue', aim: 0.28, speed: 4.0, spin: 0.45, head: 0.055 },
+  rest:      { name: 'the rest',                   aim: 0.12, speed: 5.0, spin: 0.7,  head: 0.05 },
+  extension: { name: 'the rest and an extension', aim: 0.2,  speed: 4.4, spin: 0.55, head: 0.05 },
+  long:      { name: 'the long rest and an extended cue', aim: 0.28, speed: 4.0, spin: 0.45, head: 0.05 },
   spider:    { name: 'the spider',                 aim: 0.25, speed: 4.2, spin: 0.5,  head: 0.11 },
   swan:      { name: 'the swan',                   aim: 0.25, speed: 4.2, spin: 0.5,  head: 0.08 },
 };
@@ -4525,9 +4560,13 @@ function makeRest() {
   const g = new THREE.Group(); g.visible = false; scene.add(g);
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 1, 10), wood); g.add(shaft);
   const heads = {};
-  { // the cross: two crossed bars with a notch at the top for the cue
-    const h = new THREE.Group();
-    for (const s of [1, -1]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.075, 0.012), brass); b.rotation.x = s * 0.62; b.position.y = 0.028; h.add(b); }
+  { // the cross: an X of brass bars with rubber tips; the cue lies in the upper V, just above where they cross
+    const h = new THREE.Group(), rubber = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 }), arm = 0.1;
+    for (const s of [1, -1]) {
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, arm, 8), brass); b.rotation.x = s * Math.PI / 4; b.position.y = 0.04; h.add(b);
+      for (const e of [1, -1]) { const tip = new THREE.Mesh(new THREE.SphereGeometry(0.006, 8, 6), rubber); tip.position.set(0, 0.04 + e * arm / 2 * Math.SQRT1_2, s * e * arm / 2 * Math.SQRT1_2 * -1); h.add(tip); }
+    }
+    const boss = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.014, 10), brass); boss.rotation.z = Math.PI / 2; boss.position.set(-0.008, 0.04, 0); h.add(boss);
     heads.rest = heads.extension = heads.long = h;
   }
   { // the spider: a tall arch that stands over a ball
@@ -4562,7 +4601,7 @@ function setExtension(cueGroup, kind) {
 }
 // Put a rest under a cue: its head at `point` (in the room), the cue along `dir`; the shaft runs back off the table
 // on the bridge-hand side. Returns where its handle is and which way the shaft runs, for the hand that holds it.
-function placeRest(rest, kind, point, dir, bridgeSide) {
+function placeRest(rest, kind, point, dir, bridgeSide, handleAt = null) {
   for (const h of new Set(Object.values(rest.heads))) h.visible = false;
   if (kind === 'none') { rest.g.visible = false; return null; }
   table.updateMatrixWorld();
@@ -4570,19 +4609,33 @@ function placeRest(rest, kind, point, dir, bridgeSide) {
   const p = table.worldToLocal(point.clone()), d = dir.clone().applyQuaternion(inv); d.y = 0; d.normalize();
   const side = new THREE.Vector3(-d.z, 0, d.x).multiplyScalar(bridgeSide === 'left' ? -1 : 1);
   const head = rest.heads[kind]; head.visible = true;
-  // The head stands on the cloth with the cue resting in its top
-  const top = Math.max(0.03, p.y - 0.006), natural = REST_INFO[kind].head;
-  head.position.set(p.x, 0, p.z); head.scale.set(1, top / natural, 1);
-  head.rotation.set(0, Math.atan2(-d.z, d.x), 0);
-  // The shaft: from the head back to a handle just off the edge of the table, angled out to the bridge-hand side
-  const back = edgeBehind(p.x, p.z, d.x, d.z) + 0.25;
-  const handle = new THREE.Vector3(p.x, 0, p.z).addScaledVector(d, -back).addScaledVector(side, 0.28); handle.y = CUSH_H + 0.06;
-  const foot = new THREE.Vector3(p.x, 0.012, p.z).addScaledVector(d, -0.03);
-  const mid = foot.clone().add(handle).multiplyScalar(0.5), len = foot.distanceTo(handle);
+  // The head stands on the cloth (or just off it) with the cue lying in its top
+  const natural = REST_INFO[kind].head, lift = Math.max(0, p.y - 0.006 - natural);
+  head.position.set(p.x, lift, p.z); head.scale.set(1, Math.max(0.6, (p.y - 0.006 - lift) / natural), 1);
+  // The handle: where the bridge hand holds it (in the headset), or just in from the near cushion, a little to the
+  // bridge-hand side of the cue, as a player holds it
+  let handle;
+  if (handleAt) handle = table.worldToLocal(handleAt.clone());
+  else {
+    const back = Math.max(0.3, edgeBehind(p.x, p.z, d.x, d.z) - CUSH_W - RAIL_W - 0.06);
+    handle = new THREE.Vector3(p.x, 0, p.z).addScaledVector(d, -back).addScaledVector(side, 0.07);
+    handle.y = 0.025;
+  }
+  const foot = new THREE.Vector3(p.x, lift + 0.012, p.z).addScaledVector(d, -0.035);
+  // The shaft rides over the cushion and rail rather than through them
+  handle.y = Math.max(handle.y, surfaceUnder(handle) + 0.016);
+  for (let k = 1; k <= 20; k++) {
+    const t = k / 20, q = foot.clone().lerp(handle, t), need = surfaceUnder(q) + 0.014;
+    if (need > -1 && q.y < need) handle.y = foot.y + (need - foot.y) / t;
+  }
+  // and runs on a little past the hand
+  const along = handle.clone().sub(foot).normalize(), end = handle.clone().addScaledVector(along, 0.12);
+  const mid = foot.clone().add(end).multiplyScalar(0.5), len = foot.distanceTo(end);
+  head.rotation.set(0, Math.atan2(-along.z, -along.x), 0);
   rest.shaft.position.copy(mid); rest.shaft.scale.set(1, len, 1);
-  rest.shaft.quaternion.setFromUnitVectors(UP, handle.clone().sub(foot).normalize());
+  rest.shaft.quaternion.setFromUnitVectors(UP, along);
   rest.g.position.copy(table.position); rest.g.quaternion.copy(tq); rest.g.visible = true;
-  return { handle: table.localToWorld(handle.clone()), shaftDir: handle.clone().sub(foot).normalize().applyQuaternion(tq) };
+  return { handle: table.localToWorld(handle.clone()), shaftDir: along.applyQuaternion(tq) };
 }
 // Effects on the shot, with guided rests: harder to aim, less power, less spin
 function restLimits(kind, dirX, dirZ, speed, r) {
@@ -5802,6 +5855,7 @@ function settleNow() {
 window.snooker = { reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
+  hands, updateHeadsetCue, cueState, placeRest,
   opp, handRigs, updateHands, cue, get choice() { return choice; }, chooseOption, snookeredOnAll, get champ() { return champ; }, newChampionship, frameWon, concedeFrame, menuCanvas: menu.c, boardCanvas: board.c, drawMenu, setMenuPage: p => { menuPage = p; drawMenu(); }, AI_PLAYERS, R, L, W,
 };
 </script>
