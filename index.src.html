@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 56;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 57;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4771,7 +4771,7 @@ function placeRest(rest, kind, point, dir, bridgeSide, handleAt = null) {
   fwd.normalize();
   // (a cue lying lower than the head stands is shown with the head a little squat, rather than the cue through it)
   const squat = Math.max(0.6, Math.min(1, (p.y - 0.006 - lift) / natural));
-  head.position.set(p.x, lift, p.z); head.rotation.set(0, Math.atan2(fwd.z, -fwd.x), 0); head.scale.set(1, squat, 1);
+  head.position.set(p.x, lift, p.z); head.rotation.set(0, Math.atan2(-fwd.z, fwd.x), 0);   // its +x (built facing the cue ball) along fwd head.scale.set(1, squat, 1);
   const [ax, ay] = head.userData.attach;
   const foot = new THREE.Vector3(p.x, lift + ay * squat, p.z).addScaledVector(fwd, ax);
   // The handle can't be further along than the shaft is long
