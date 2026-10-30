@@ -350,7 +350,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 44;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 45;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4023,13 +4023,14 @@ function updateHeadsetCue(dt, now) {
       dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cueHand.ray.quaternion);
       offset = behindBall(dir, 0.35);
     }
-    // Steady the aim: tiny wobbles of the hands are smoothed out (they swing a long guide line a lot);
-    // anything bigger is followed straight away
+    // Steady the aim: tiny left-right wobbles of the hands are smoothed out (they swing a long guide line a lot);
+    // anything bigger is followed straight away. The cue's tilt up and down always follows your hands exactly.
     if (settings.aimSteady !== false) {
-      const a = cueState.sdir ? Math.acos(Math.max(-1, Math.min(1, cueState.sdir.dot(dir)))) : 1;
-      if (a > 0.06) cueState.sdir = dir.clone();
-      else cueState.sdir.lerp(dir, 1 - Math.exp(-dt * (a < 0.012 ? 5 : 22))).normalize();
-      dir = cueState.sdir.clone();
+      const yaw = Math.atan2(dir.z, dir.x), flat = Math.hypot(dir.x, dir.z);
+      const diff = cueState.syaw === undefined ? 1 : Math.atan2(Math.sin(yaw - cueState.syaw), Math.cos(yaw - cueState.syaw));
+      if (Math.abs(diff) > 0.06 || flat < 0.2) cueState.syaw = yaw;
+      else cueState.syaw += diff * (1 - Math.exp(-dt * (Math.abs(diff) < 0.012 ? 5 : 22)));
+      dir = new THREE.Vector3(Math.cos(cueState.syaw) * flat, dir.y, Math.sin(cueState.syaw) * flat);
     }
     // Never through the cushion or rail: strike higher and raise the butt instead
     const lifted = liftOverEdge(back.clone().addScaledVector(dir, offset), dir);
