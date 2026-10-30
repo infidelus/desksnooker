@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 61;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 62;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -541,7 +541,7 @@ class Ball {
     table.add(this.mesh); table.add(this.shadow);
   }
   stop() { this.vx = this.vz = this.wx = this.wy = this.wz = 0; }
-  place(x, z) { this.x = x; this.z = z; this.stop(); this.onTable = true; this.falling = null; this.inPocket = null; }
+  place(x, z) { this.x = x; this.z = z; this.stop(); this.onTable = true; this.falling = null; this.inPocket = null; if (this.mesh) this.mesh.quaternion.normalize(); }
   show(on) { this.mesh.visible = this.shadow.visible = on; }
 }
 
@@ -1854,7 +1854,7 @@ function runnerStep(b, dt) {
   }
   // rolling along the rails
   const moved = ip.d - was;
-  if (moved > 0 && ip.d > l1) { runnerAxis.set(-run.dir.z, 0, run.dir.x); qd.setFromAxisAngle(runnerAxis, -moved / R); b.mesh.quaternion.premultiply(qd); }
+  if (moved > 0 && ip.d > l1) { runnerAxis.set(-run.dir.z, 0, run.dir.x).normalize(); qd.setFromAxisAngle(runnerAxis, -moved / R); b.mesh.quaternion.premultiply(qd).normalize(); }
 }
 
 // The ball the cue ball is resting against, if any (within half a millimetre)
@@ -5833,7 +5833,7 @@ function syncBallMeshes(dt) {
     if (w > 1e-3) {
       axisV.set(b.wx / w, b.wy / w, b.wz / w);
       qd.setFromAxisAngle(axisV, w * dt);
-      b.mesh.quaternion.premultiply(qd);
+      b.mesh.quaternion.premultiply(qd).normalize();          // (kept exactly a rotation, so the ball stays round)
     }
   }
 }
