@@ -298,16 +298,16 @@ const MAX_BALL_SPEED = 9;
 const AI_PLAYERS = [
   { name: 'Dave Hart',        title: 'Pub regular',               aim: 0.65,  speed: 0.18,  cands: 2, speeds: [1.5],            spins: [0],                position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, rating: 1000 },
   { name: 'Bob Ackland',      title: 'Social club member',        aim: 0.6,   speed: 0.17,  cands: 2, speeds: [1.5],            spins: [0],                position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, rating: 1040 },
-  { name: 'Gary Pike',        title: 'Pub league player',         aim: 0.55,  speed: 0.16,  cands: 2, speeds: [1.3, 2.1],       spins: [0],                position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, rating: 1080 },
+  { name: 'Gary Pike',        title: 'Pub league player',         aim: 0.55,  speed: 0.16,  cands: 2, speeds: [1.3, 2.1],       spins: [0],                position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, breaksLeft: true, rating: 1080 },
   { name: 'Tracy Gill',       title: 'Pub team captain',          aim: 0.5,   speed: 0.15,  cands: 2, speeds: [1.3, 2.1],       spins: [0],                position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, rating: 1115 },
   { name: 'Shirley Brooks',   title: 'Club player',               aim: 0.45,  speed: 0.14,  cands: 3, speeds: [1.3, 2.1],       spins: [0, 0.35],          position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, rating: 1150 },
   { name: 'Imran Qadir',      title: 'Club handicap winner',      aim: 0.415, speed: 0.135, cands: 3, speeds: [1.3, 2.1],       spins: [0, 0.35],          position: 0.15,  safety: 0.1,   attack: 0.05,  think: 0, rating: 1190 },
-  { name: 'Owen Thackeray',   title: 'Club captain',              aim: 0.38,  speed: 0.13,  cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.3,   safety: 0.2,   attack: 0.1,   think: 1, rating: 1230 },
+  { name: 'Owen Thackeray',   title: 'Club captain',              aim: 0.38,  speed: 0.13,  cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.3,   safety: 0.2,   attack: 0.1,   think: 1, breaksLeft: true, rating: 1230 },
   { name: 'Neil Furness',     title: 'League player',             aim: 0.35,  speed: 0.125, cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.4,   safety: 0.3,   attack: 0.15,  think: 1, rating: 1265 },
   { name: 'Kev Dunmore',      title: 'League stalwart',           aim: 0.32,  speed: 0.12,  cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.5,   safety: 0.4,   attack: 0.2,   think: 1, rating: 1300 },
   { name: 'Paddy Corrigan',   title: 'Club champion',             aim: 0.295, speed: 0.115, cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.55,  safety: 0.45,  attack: 0.21,  think: 1, rating: 1340 },
   { name: 'Sanjay Bhalla',    title: 'Regional champion',         aim: 0.27,  speed: 0.11,  cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.6,   safety: 0.5,   attack: 0.22,  think: 1, rating: 1380 },
-  { name: 'Ffion Pryce',      title: "Women's tour player",       aim: 0.245, speed: 0.105, cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.65,  safety: 0.55,  attack: 0.235, think: 1, rating: 1415 },
+  { name: 'Ffion Pryce',      title: "Women's tour player",       aim: 0.245, speed: 0.105, cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.65,  safety: 0.55,  attack: 0.235, think: 1, breaksLeft: true, rating: 1415 },
   { name: 'Priya Lal',        title: 'County champion',           aim: 0.22,  speed: 0.1,   cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.7,   safety: 0.6,   attack: 0.25,  think: 1, rating: 1450 },
   { name: 'Lewis Ambrose',    title: 'Junior international',      aim: 0.2,   speed: 0.095, cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.75,  safety: 0.65,  attack: 0.265, think: 1, rating: 1490 },
   { name: 'Megan Tolley',     title: 'National amateur champion', aim: 0.18,  speed: 0.09,  cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 0.8,   safety: 0.7,   attack: 0.28,  think: 1, rating: 1530 },
@@ -315,11 +315,11 @@ const AI_PLAYERS = [
   { name: 'Tommy Moran',      title: 'Semi-professional',         aim: 0.15,  speed: 0.08,  cands: 5, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 0.85,  safety: 0.75,  attack: 0.3,   think: 1, rating: 1600 },
   { name: 'Callum Fraine',    title: 'Tour qualifier',            aim: 0.12,  speed: 0.07,  cands: 5, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 0.95,  safety: 0.85,  attack: 0.32,  think: 2, rating: 1680 },
   { name: 'Lin Wei',          title: 'Touring professional',      aim: 0.1,   speed: 0.06,  cands: 5, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 0.9,   attack: 0.34,  think: 2, rating: 1750 },
-  { name: 'Rhys Penhallow',   title: 'Top-32 professional',       aim: 0.085, speed: 0.055, cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 0.95,  attack: 0.35,  think: 2, rating: 1820 },
+  { name: 'Rhys Penhallow',   title: 'Top-32 professional',       aim: 0.085, speed: 0.055, cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 0.95,  attack: 0.35,  think: 2, breaksLeft: true, rating: 1820 },
   { name: 'Alastair Grieve',  title: 'Ranking event winner',      aim: 0.07,  speed: 0.05,  cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.37,  think: 2, rating: 1900 },
   { name: 'Josie Achterberg', title: 'Top-16 professional',       aim: 0.057, speed: 0.045, cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.38,  think: 2, rating: 1970 },
   { name: 'Marcus Vale',      title: 'World champion',            aim: 0.045, speed: 0.04,  cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.4,   think: 2, rating: 2050 },
-  { name: 'Declan Royle',     title: 'Snooker legend',            aim: 0.036, speed: 0.035, cands: 7, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.42,  think: 2, rating: 2120 },
+  { name: 'Declan Royle',     title: 'Snooker legend',            aim: 0.036, speed: 0.035, cands: 7, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.42,  think: 2, breaksLeft: true, rating: 2120 },
 ];
 const ROUND_NAMES = ['Last 16', 'Quarter-final', 'Semi-final', 'Final'];
 // A championship of 8 has three rounds and one of 16 has four; rounds are named counting back from the final
@@ -331,7 +331,7 @@ const roundName = r => ROUND_NAMES[ROUND_NAMES.length - champRounds() + r];
 // =====================================================================
 const DEFAULTS = {
   mode: 'practice', aim: true, pockets: 'standard', power: 1.3, bridge: 0.25,
-  hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, follow: 'aim', legs: true, sound: true, tableY: 0.76,
+  hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, follow: 'aim', cueStyle: 'pro', legs: true, sound: true, tableY: 0.76,
   opponent: 8, bestOf: 3, reds: 15, champLevel: 'amateur', champLength: 'short', champSize: 16,
   referee: 'male', coachVoice: 'male', hands: 'medium', figure: true, rules: 'pro',
 };
@@ -349,7 +349,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 41;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 42;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3088,7 +3088,9 @@ function* breakOff(profile) {
     const depth = Math.max(0, Math.min(1, (BAULK_X - c.x) / (BAULK_X + L / 2 - 0.15)));
     return (c.x < BAULK_X ? 1 : 0) + 1.2 * depth + 0.6 * (1 - leaveDanger(sim.list, potted.length ? 'colour' : 'red')) + (potted.length ? 0.3 : 0);
   };
-  for (const cz of [0.17, -0.17]) {
+  // Most players break from the right of the D (the yellow side, as you look up the table); a few always go left
+  const side = profile.breaksLeft ? -1 : 1;
+  for (const cz of [0.17 * side]) {
     if (!spotFreeIn(balls, BAULK_X, cz, cueBall)) continue;
     const base = cloneBalls(balls), cue = base[0];
     cue.x = BAULK_X; cue.z = cz; cue.onTable = true;
@@ -3153,6 +3155,7 @@ function updateAI(dt) {
       return;
     }
     ai.gen = aiThink(profile); ai.t = 0; ai.thinkStart = performance.now();
+    buildCue(aiCue, cueForRating(profile.rating));
     setMessage(`${game.players[game.current].name} is thinking…`);
   }
   if (ai.gen) {
@@ -3237,31 +3240,86 @@ function placeCueInHand() {
 // =====================================================================
 //  Cue, aiming guide, board and menu meshes
 // =====================================================================
-const cue = new THREE.Group();
-{
-  // A flush tip: about 5 mm of chalked leather, slightly domed, the same width as the metal ferrule below it
-  const TIP = 0.0048, DOME = 0.009, cap = Math.asin(TIP / DOME), capH = DOME * (1 - Math.cos(cap));
-  const chalk = new THREE.MeshStandardMaterial({ color: 0x3f7fb5, roughness: 0.9, dithering: true });
-  const dome = new THREE.SphereGeometry(DOME, 16, 4, 0, Math.PI * 2, 0, cap);
-  dome.translate(0, -DOME, 0);
-  cue.add(new THREE.Mesh(dome, chalk));
-  const parts = [
-    { len: 0.0045, r0: TIP, r1: TIP, mat: chalk },                                                                              // the leather
-    { len: 0.019, r0: TIP, r1: 0.0049, mat: new THREE.MeshStandardMaterial({ color: 0xc9cdd2, roughness: 0.3, metalness: 0.9, dithering: true }) },  // ferrule
-    { len: 0.95,  r0: 0.0049, r1: 0.0105, colour: 0xd8b77a, rough: 0.35 }, // ash shaft
-    { len: 0.488, r0: 0.0105, r1: 0.0150, colour: 0x2a140a, rough: 0.3 },  // ebony butt
-  ];
-  let y = -capH;
-  for (const p of parts) {
-    const geo = new THREE.CylinderGeometry(p.r0, p.r1, p.len, 16);
-    geo.translate(0, y - p.len / 2, 0);
-    cue.add(new THREE.Mesh(geo, p.mat || new THREE.MeshStandardMaterial({ color: p.colour, roughness: p.rough, dithering: true })));
-    y -= p.len;
+// Cues: the shaft and butt are one turned piece (a lathe), with the wood, splices and veneers painted on.
+// Three styles: a plain pub cue, a club cue with short ebony points, and a hand-spliced professional cue.
+const CUE_LEN = 1.438;                 // from the ferrule to the end of the butt
+const CUE_STYLES = {
+  pub:  { label: 'Pub',  ash: '#d9b97c', grain: 0.10, points: 0, spliceTo: 0,    sleeve: 0.48, butt: '#3a1c10', veneers: [], joint: false, rTip: 0.0052, rMid: 0.0110, rButt: 0.0155 },
+  club: { label: 'Club', ash: '#d6b072', grain: 0.22, points: 4, spliceTo: 0.36, sleeve: 0.20, butt: '#140b07', veneers: [], joint: true, rTip: 0.0050, rMid: 0.0106, rButt: 0.0150 },
+  pro:  { label: 'Pro',  ash: '#cfa25e', grain: 0.32, points: 4, spliceTo: 0.62, sleeve: 0.24, butt: '#0d0806', veneers: ['#f1e2bf', '#140a05', '#b5492a'], joint: true, rTip: 0.0048, rMid: 0.0102, rButt: 0.0146 },
+};
+const cueTextures = {};
+function cueTexture(st) {
+  if (cueTextures[st.label]) return cueTextures[st.label];
+  const W = 128, H = 2048, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), px = m => (m / CUE_LEN) * H;       // canvas row 0 is the end of the butt
+  let seed = st.label.length * 977; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // Ash: pale wood with long, slightly wavy grain lines
+  g.fillStyle = st.ash; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 70; i++) {
+    const x0 = r() * W, dark = r() < 0.7;
+    g.strokeStyle = dark ? `rgba(90,55,20,${st.grain * (0.3 + r() * 0.7)})` : `rgba(255,240,210,${st.grain * 0.5})`;
+    g.lineWidth = 0.6 + r() * 2.2; g.beginPath();
+    for (let y = 0; y <= H; y += 64) g.lineTo(x0 + Math.sin(y / (180 + r() * 120) + i) * 3, y);
+    g.stroke();
   }
+  // Ebony points: each a long triangle from the sleeve up the butt, edged with thin veneers
+  const sleeve = px(st.sleeve), top = px(st.spliceTo);
+  for (let k = 0; k < st.points; k++) {
+    const cx = (k + 0.5) * W / st.points, half = W / st.points / 2;
+    const tri = (inset, colour) => {
+      g.fillStyle = colour; g.beginPath();
+      g.moveTo(cx - half + inset, sleeve); g.lineTo(cx, top - inset * 3); g.lineTo(cx + half - inset, sleeve); g.closePath(); g.fill();
+    };
+    st.veneers.forEach((v, i) => tri(i * 3, v));
+    tri(st.veneers.length * 3, st.butt);
+  }
+  // The butt sleeve, and a little dark grain in it
+  g.fillStyle = st.butt; g.fillRect(0, 0, W, sleeve);
+  for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(255,255,255,${0.015 + r() * 0.03})`; g.fillRect(r() * W, r() * sleeve, 1 + r() * 2, 40 + r() * 200); }
+  if (st.veneers.length) { g.fillStyle = st.veneers[0]; g.fillRect(0, sleeve - 3, W, 3); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.flipY = false; t.anisotropy = 4;
+  return (cueTextures[st.label] = t);
 }
+// Fill a cue group with the parts for a style; the tip is at the origin and the cue points along +y
+function buildCue(group, style) {
+  const st = CUE_STYLES[style] || CUE_STYLES.pro;
+  if (group.userData.style === style) return;
+  group.userData.style = style;
+  while (group.children.length) { const o = group.children.pop(); o.geometry.dispose(); }
+  const TIP = st.rTip, DOME = 0.009, cap = Math.asin(TIP / DOME), capH = DOME * (1 - Math.cos(cap));
+  const chalk = new THREE.MeshStandardMaterial({ color: 0x3f7fb5, roughness: 0.9, dithering: true });
+  const metal = c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.3, metalness: 0.9, dithering: true });
+  const dome = new THREE.SphereGeometry(DOME, 16, 4, 0, Math.PI * 2, 0, cap); dome.translate(0, -DOME, 0);
+  group.add(new THREE.Mesh(dome, chalk));
+  let y = -capH;
+  const ring = (len, r0, r1, mat) => { const g2 = new THREE.CylinderGeometry(r0, r1, len, 20); g2.translate(0, y - len / 2, 0); group.add(new THREE.Mesh(g2, mat)); y -= len; };
+  ring(0.0045, TIP, TIP, chalk);                                                    // the leather
+  ring(0.019, TIP, TIP + 0.0001, metal(style === 'pub' ? 0xe8e2d0 : 0xc9cdd2));        // ferrule
+  // Shaft and butt: a gentle taper to the joint, then a quicker swell to the butt
+  const top = y, prof = [];
+  for (let i = 0; i <= 60; i++) {
+    const m = CUE_LEN * (1 - i / 60);                                                // distance from the butt end
+    const fromTip = CUE_LEN - m, rr = fromTip < 0.95 ? st.rTip + 0.0001 + (st.rMid - st.rTip) * Math.pow(fromTip / 0.95, 1.4)
+      : st.rMid + (st.rButt - st.rMid) * ((fromTip - 0.95) / (CUE_LEN - 0.95));
+    prof.push(new THREE.Vector2(rr, top - fromTip));
+  }
+  prof.reverse();                                                                    // butt first, so the faces point outwards
+  const lathe = new THREE.LatheGeometry(prof, 24);
+  group.add(new THREE.Mesh(lathe, new THREE.MeshStandardMaterial({ map: cueTexture(st), roughness: 0.32, dithering: true })));
+  // a three-quarter joint, 37 cm up from the butt
+  if (st.joint) { const jy = top - (CUE_LEN - 0.37); const jr = st.rMid + (st.rButt - st.rMid) * ((CUE_LEN - 0.37 - 0.95) / (CUE_LEN - 0.95)) + 0.0004, j = new THREE.CylinderGeometry(jr, jr, 0.012, 20); j.translate(0, jy, 0); group.add(new THREE.Mesh(j, metal(0xc9a24a))); }
+  const capG = new THREE.CylinderGeometry(st.rButt, st.rButt - 0.001, 0.012, 20); capG.translate(0, top - CUE_LEN - 0.006, 0);
+  group.add(new THREE.Mesh(capG, new THREE.MeshStandardMaterial({ color: 0x0b0b0b, roughness: 0.8 })));         // rubber butt cap
+}
+// Which cue the computer's players use: the stronger the player, the better the cue
+const cueForRating = rating => (rating < 1200 ? 'pub' : rating < 1600 ? 'club' : 'pro');
+const cue = new THREE.Group();
+buildCue(cue, settings.cueStyle || 'pro');
 cue.visible = false;
 scene.add(cue);
-const aiCue = cue.clone();
+const aiCue = new THREE.Group();
+buildCue(aiCue, 'pro');
 aiCue.visible = false;
 scene.add(aiCue);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -3488,6 +3546,11 @@ const tableRows = [
     { t: () => 'The table', on: () => settings.stickFeel === 'table', act: () => { settings.stickFeel = 'table'; } },
     { t: () => 'Me', on: () => settings.stickFeel === 'me', act: () => { settings.stickFeel = 'me'; } },
   ] },
+  { label: 'Scoreboard', btns: [
+    { t: () => 'Beyond the table', on: () => settings.board !== 'centre', act: () => { settings.board = 'far'; } },
+    { t: () => 'Over the middle', on: () => settings.board === 'centre', act: () => { settings.board = 'centre'; } },
+  ] },
+  { label: 'Your cue', btns: Object.keys(CUE_STYLES).map(k => ({ t: () => CUE_STYLES[k].label, on: () => (settings.cueStyle || 'pro') === k, act: () => { settings.cueStyle = k; buildCue(cue, k); netSend({ t: 'cue', style: k }); } })) },
   { label: 'After a shot', btns: [
     { t: () => 'Turn to the shot', on: () => settings.follow === 'aim', act: () => { settings.follow = 'aim'; } },
     { t: () => 'Bring cue ball', on: () => settings.follow === 'ball', act: () => { settings.follow = 'ball'; } },
@@ -4138,10 +4201,20 @@ function highlightBall(b) {
   if (b) b.mesh.material.emissive.setHex(0x333333);
 }
 
+// The scoreboard: over the middle of the table, or (by default) raised up beyond the far side of the table from
+// you, like a screen at the end of an arena, where it's never between you and the balls. It glides round as you move.
 function updateBoardPose() {
   table.updateMatrixWorld();
-  board.mesh.position.copy(table.localToWorld(new THREE.Vector3(0, 0.85, 0)));
   const { pos } = headPose();
+  let want;
+  if (settings.board === 'centre') want = table.localToWorld(new THREE.Vector3(0, 0.85, 0));
+  else {
+    const me = table.worldToLocal(pos.clone()), d = Math.hypot(me.x, me.z) || 1, ux = -me.x / d, uz = -me.z / d;
+    const t = Math.min((L / 2 + 0.45) / Math.max(1e-3, Math.abs(ux)), (W / 2 + 0.45) / Math.max(1e-3, Math.abs(uz)));
+    want = table.localToWorld(new THREE.Vector3(ux * t, 0.6, uz * t));
+  }
+  if (!board.placed || board.mesh.position.distanceTo(want) > 3) { board.mesh.position.copy(want); board.placed = true; }
+  else board.mesh.position.lerp(want, 0.06);
   board.mesh.lookAt(pos.x, board.mesh.position.y, pos.z);
 }
 
@@ -4701,6 +4774,7 @@ function coachShowMe() {
   if (settings.mode === 'practice') { coachTip(); return; }
   if (coach.mode !== 'lesson' || !coach.plan || anyMoving() || coach.demo) return;
   resetStep();
+  buildCue(aiCue, 'pro');
   coach.demo = { plan: coach.plan, t: 0, glide: 0 };
   coach.status = ''; coachSay('show'); renderCoach();
 }
@@ -4882,7 +4956,7 @@ function updateCoach(dt) {
       }
     }
   }
-  updateCoachPanelPose();
+  updateCoachPanelPose(dt);
 }
 
 // ---------- the coach's panel: on the screen and in the headset ----------
@@ -4929,7 +5003,7 @@ function renderCoach() {
   }
   drawCoachPanel();
 }
-const coachPanel = makePanel(1024, 600, 0.8);
+const coachPanel = makePanel(1024, 600, 0.56);
 coachPanel.mesh.visible = false;
 scene.add(coachPanel.mesh);
 const coachHits = [];
@@ -4960,13 +5034,20 @@ function drawCoachPanel() {
 }
 // In the headset the panel stands well beyond the far long side of the table and above head height when you're down
 // on a shot, so your cue never points at it; it tilts to face you
-function updateCoachPanelPose() {
-  if (!coachPanel.mesh.visible) return;
-  table.updateMatrixWorld();
-  const me = table.worldToLocal(headPose().pos.clone());
-  const z = me.z > 0 ? -(W / 2 + 0.85) : W / 2 + 0.85;
-  coachPanel.mesh.position.copy(table.localToWorld(new THREE.Vector3(Math.max(-1, Math.min(1, me.x)), 0.95, z)));
-  const { pos } = headPose();
+// The coach's panel stays beside you: off to the side of your bridge hand, a little below eye level. It only moves
+// when you've turned well away from it (or moved), then glides back into view, so it never jumps about while you read.
+const coachFollow = { dir: null, target: new THREE.Vector3() };
+function updateCoachPanelPose(dt = 1 / 72) {
+  if (!coachPanel.mesh.visible) { coachFollow.dir = null; return; }
+  const { pos, fwd, right } = headPose();
+  const away = settings.hand === 'left' ? right : right.clone().negate();          // the bridge-hand side
+  const want = fwd.clone().multiplyScalar(Math.cos(0.6)).addScaledVector(away, Math.sin(0.6)).normalize();
+  const here = coachPanel.mesh.position.clone().sub(pos); here.y = 0;
+  const lost = !coachFollow.dir || here.length() < 0.4 || here.length() > 1.4 || here.normalize().dot(fwd) < Math.cos(0.8);
+  if (lost) coachFollow.dir = want;
+  coachFollow.target.copy(pos).addScaledVector(coachFollow.dir, 0.85); coachFollow.target.y = pos.y - 0.12;
+  if (!coachPanel.placed) { coachPanel.mesh.position.copy(coachFollow.target); coachPanel.placed = true; }
+  coachPanel.mesh.position.lerp(coachFollow.target, 1 - Math.exp(-dt * 5));
   coachPanel.mesh.lookAt(pos.x, pos.y, pos.z);
 }
 // Point at the panel with your cue hand and pull the trigger to press a button
@@ -5315,7 +5396,7 @@ async function joinOnline(code) {
 }
 function setupConn(c) {
   net.conn = c;
-  c.on('open', () => netSend({ t: 'hello', build: BUILD }));
+  c.on('open', () => netSend({ t: 'hello', build: BUILD, cue: settings.cueStyle || 'pro' }));
   c.on('data', netReceive);
   c.on('close', () => netLost('Your opponent has left the match.'));
   c.on('error', () => netLost('The connection to your opponent was lost.'));
@@ -5422,7 +5503,9 @@ function tryRemoteEnd() {
 function netReceive(m) {
   if (!m || typeof m !== 'object') return;
   switch (m.t) {
+    case 'cue': buildCue(aiCue, m.style); return;
     case 'hello':
+      buildCue(aiCue, m.cue || 'pro');
       if (m.build !== BUILD) {
         netStatus(`Your opponent is on build ${m.build} and you're on build ${BUILD}. Both reload the page to get the latest version, then try again.`);
         setTimeout(() => netLeave(true), 500); return;
@@ -5504,7 +5587,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   opp, handRigs, updateHands, cue, get choice() { return choice; }, chooseOption, snookeredOnAll, get champ() { return champ; }, newChampionship, frameWon, concedeFrame, menuCanvas: menu.c, boardCanvas: board.c, drawMenu, setMenuPage: p => { menuPage = p; drawMenu(); }, AI_PLAYERS, R, L, W,
