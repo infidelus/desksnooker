@@ -192,7 +192,8 @@
     <dl>
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
       <dt>Left stick</dt><dd>Slide the table around</dd>
-      <dt>Right stick</dt><dd>Left/right rotates the table round you; a firm hold up or down changes its height</dd>
+      <dt>Right stick</dt><dd>Left/right rotates the table round you</dd>
+      <dt>Right grip + right stick</dt><dd>Hold the grip and push the stick up or down to raise or lower the table</dd>
       <dt>After a shot</dt><dd>The table glides round so the cue ball is in front of you, facing the likely shot. Moving the table yourself stops it. Change it under Table: After a shot</dd>
       <dt>X</dt><dd>Bring the cue ball to your bridge hand</dd>
       <dt>Y</dt><dd>Menu (point and pull the cue trigger)</dd>
@@ -348,7 +349,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 39;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 40;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3832,18 +3833,16 @@ let heightDirty = false;
 // (rotate or height) is kept until the stick returns to the centre. Height also
 // needs a firm push held for a moment, so rotating can't nudge it by accident.
 const rightStick = { mode: null, held: 0 };
+// Right stick: left/right turns the table round you. Holding the right grip, up/down raises or lowers it
+// (and turning is off), so the height never changes by accident.
 function rightStickAxes(dt) {
-  const gp = hands.right && hands.right.source.gamepad;
+  const r = hands.right;
+  const grip = !!r && btn(r, 1) && grabbedCue !== r;
+  if (grip !== rightStick.grip) { rightStick.grip = grip; if (grip) pulse(r, 0.12, 15); }   // a tick: you're in height mode
+  if (grip) return [0, axis(r, 3)];
+  const gp = r && r.source.gamepad;
   const rawX = gp ? gp.axes[2] || 0 : 0, rawY = gp ? gp.axes[3] || 0 : 0;
-  if (Math.hypot(rawX, rawY) < 0.2) { rightStick.mode = null; rightStick.held = 0; return [0, 0]; }
-  if (!rightStick.mode) {
-    if (Math.abs(rawX) > 0.35 && Math.abs(rawX) > Math.abs(rawY)) rightStick.mode = 'rotate';
-    else if (Math.abs(rawY) > 0.6 && Math.abs(rawY) > 2 * Math.abs(rawX)) rightStick.mode = 'height';
-    else return [0, 0];
-  }
-  if (rightStick.mode === 'rotate') return [axis(hands.right, 2), 0];
-  rightStick.held += dt;
-  return rightStick.held > 0.3 ? [0, axis(hands.right, 3)] : [0, 0];
+  return Math.abs(rawX) > Math.abs(rawY) ? [axis(r, 2), 0] : [0, 0];
 }
 function moveTableWithSticks(dt) {
   if (settings.lockTable) return;
