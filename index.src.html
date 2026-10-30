@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 51;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 52;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4137,11 +4137,17 @@ function updateHeadsetCue(dt, now) {
         } else if (g > -1 && tip.y < g) rs.head.y = g;            // resting on the cushion or rail, not through it
       }
       if (rs.down) {
+        // Once it's down it stays still: the small movements your hands and wrist make as you cue are ignored. The
+        // butt only follows your hand once it's moved more than a few centimetres, and the wrist tilt is steadied.
+        if (!rs.hold) rs.hold = h.clone();
+        const off = h.distanceTo(rs.hold);
+        if (off > 0.04) rs.hold.lerp(h, (off - 0.04) / off);
         const above = tip.y - Math.max(0, g);
-        if (above > 0.06) { rs.down = false; rs.reach = holdAt(Math.hypot(rs.head.x - h.x, rs.head.z - h.z)); rs.head.copy(h).addScaledVector(f, rs.reach); rs.lift = 0; }   // lifted clear
+        rs.above = rs.above === undefined ? above : rs.above + (above - rs.above) * Math.min(1, dt * 5);
+        if (rs.above > 0.12) { rs.down = false; rs.hold = null; rs.above = undefined; rs.reach = holdAt(Math.hypot(rs.head.x - h.x, rs.head.z - h.z)); rs.head.copy(h).addScaledVector(f, rs.reach); rs.lift = 0; }   // lifted clear
         else {
-          rs.lift = Math.max(0, Math.min(0.02, (above - 0.015) * 0.45));
-          const head = rs.head, vx = h.x - head.x, vz = h.z - head.z, dd = Math.hypot(vx, vz) || 1;
+          rs.lift = Math.max(0, Math.min(0.02, (rs.above - 0.04) * 0.3));
+          const hp = rs.hold, head = rs.head, vx = hp.x - head.x, vz = hp.z - head.z, dd = Math.hypot(vx, vz) || 1;
           const most = longest, least = 0.35;
           if (dd > most) { head.x += vx * (dd - most) / dd; head.z += vz * (dd - most) / dd; }          // dragged
           else if (dd < least) { head.x += vx * (dd - least) / dd; head.z += vz * (dd - least) / dd; }  // pushed
@@ -4253,7 +4259,7 @@ function updateHeadsetCue(dt, now) {
     const need = cueState.need || 'none';
     // Once you're cueing, the rest stays exactly where it is, whatever your bridge hand does: only the cue moves
     const rs = cueState.rest;
-    if (rs && !cueState.locked) rs.handle = table.worldToLocal(bridgeHand.grip.position.clone());
+    if (rs && !cueState.locked) rs.handle = rs.down && rs.hold ? rs.hold.clone() : table.worldToLocal(bridgeHand.grip.position.clone());
     const handleAt = rs && rs.handle ? table.localToWorld(rs.handle.clone()) : bridgeHand && bridgeHand.grip.position;
     const restHold = need !== 'none' && cueState.restAt ? placeRest(playerRest, need, cueState.restAt, cueState.locked && rs && rs.dir ? rs.dir : dir, settings.hand === 'right' ? 'left' : 'right', handleAt) : placeRest(playerRest, 'none');
     if (rs && !cueState.locked) rs.dir = dir.clone();
