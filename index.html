@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 57;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 58;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4721,12 +4721,17 @@ function makeRest() {
     h.userData.attach = [-0.035, 0.085];
     heads.spider = h;
   }
-  { // the swan: a long brass neck that curves up and forward from the shaft, with a small fork at its end
-    const h = new THREE.Group();
-    const curve = new THREE.CatmullRomCurve3([V(-0.2, 0.025, 0), V(-0.15, 0.04, 0), V(-0.08, 0.085, 0), V(-0.02, 0.09, 0), V(0, 0.075, 0)]);
-    h.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.0045, 8), brass));
-    for (const s of [1, -1]) h.add(bar(V(0, 0.068, 0), V(0, 0.082, s * 0.012), 0.0025));
-    h.userData.attach = [-0.2, 0.025];
+  { // the swan: a brass horseshoe that stands on the cloth, with a long neck reaching forward from its top to a small
+    // fork that holds the cue, well out in front of the feet, so it can reach over a ball
+    const h = new THREE.Group(), x0 = -0.17, top = 0.07, r = 0.0055;
+    const shoe = [];
+    for (let i = 0; i <= 16; i++) { const t = i / 16 * Math.PI; shoe.push(V(x0, top * Math.sin(t), 0.042 * Math.cos(t))); }   // its ends face straight down on to the cloth
+    h.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(shoe), 32, r, 8), brass));
+    const neck = new THREE.CatmullRomCurve3([V(x0, top, 0), V(-0.12, 0.064, 0), V(-0.06, 0.06, 0), V(-0.02, 0.066, 0), V(0, 0.074, 0)]);
+    h.add(new THREE.Mesh(new THREE.TubeGeometry(neck, 24, 0.0042, 8), brass));
+    for (const s of [1, -1]) h.add(bar(V(0, 0.074, 0), V(0.006, 0.09, s * 0.008), 0.0024));
+    h.add(bar(V(x0 - 0.03, top - 0.002, 0), V(x0 + 0.004, top, 0), 0.0078));   // the socket for the shaft
+    h.userData.attach = [x0 - 0.03, top - 0.002];
     heads.swan = h;
   }
   for (const h of new Set(Object.values(heads))) { h.visible = false; g.add(h); }
@@ -4744,6 +4749,12 @@ function setExtension(cueGroup, kind) {
   }
   ext.visible = on;
   if (on) { const len = kind === 'long' ? 0.9 : 0.45; ext.scale.y = len / 0.45; ext.position.y = -1.45 - len / 2; }
+}
+// The highest thing under a point on the table (table space): the bed, a cushion or the rail, or a ball
+function obstacleUnder(q, clear = 0.014) {
+  let h = surfaceUnder(q);
+  for (const b of balls) if (b.onTable && !b.falling && Math.hypot(b.x - q.x, b.z - q.z) < R + clear) h = Math.max(h, 2 * R);
+  return h;
 }
 // Put a rest under a cue: its head at `point` (in the room), the cue along `dir`. The shaft runs back to the handle:
 // where the bridge hand holds it (in the headset), or else just in from the near cushion on the bridge-hand side.
@@ -4765,24 +4776,49 @@ function placeRest(rest, kind, point, dir, bridgeSide, handleAt = null) {
     handle = new THREE.Vector3(p.x, 0, p.z).addScaledVector(d, -back).addScaledVector(side, 0.07);
     handle.y = 0.025;
   }
-  // The head turns with the shaft, which comes from behind it
-  const fwd = new THREE.Vector3(p.x - handle.x, 0, p.z - handle.z);
-  if (fwd.lengthSq() < 1e-6) fwd.set(d.x, 0, d.z);
-  fwd.normalize();
   // (a cue lying lower than the head stands is shown with the head a little squat, rather than the cue through it)
   const squat = Math.max(0.6, Math.min(1, (p.y - 0.006 - lift) / natural));
-  head.position.set(p.x, lift, p.z); head.rotation.set(0, Math.atan2(-fwd.z, fwd.x), 0);   // its +x (built facing the cue ball) along fwd head.scale.set(1, squat, 1);
   const [ax, ay] = head.userData.attach;
-  const foot = new THREE.Vector3(p.x, lift + ay * squat, p.z).addScaledVector(fwd, ax);
-  // The handle can't be further along than the shaft is long
-  const reach = handle.clone().sub(foot), dist = reach.length();
-  if (dist > len - 0.06) handle.copy(foot).addScaledVector(reach, (len - 0.06) / dist);
-  // The shaft rides over the cushion and rail rather than through them
-  handle.y = Math.max(handle.y, surfaceUnder(handle) + 0.016);
-  for (let k = 1; k <= 20; k++) {
-    const t = k / 20, q = foot.clone().lerp(handle, t), need = surfaceUnder(q) + 0.014;
-    if (need > -1 && q.y < need) handle.y = foot.y + (need - foot.y) / t;
+  // The head turns with the shaft, which comes from behind it
+  const footFor = h => {
+    const f = new THREE.Vector3(p.x - h.x, 0, p.z - h.z);
+    if (f.lengthSq() < 1e-6) f.set(d.x, 0, d.z);
+    f.normalize();
+    return { fwd: f, foot: new THREE.Vector3(p.x, lift + ay * squat, p.z).addScaledVector(f, ax) };
+  };
+  // Nothing passes through the table or the balls: the whole length of the shaft, butt and all, is kept above the
+  // cushion, the rail and any ball under it, by tipping the butt up as far as it needs. Returns how far it tipped.
+  const settle = (h, foot) => {
+    const reach = h.clone().sub(foot), dist = reach.length();
+    if (dist > len - 0.06) h.copy(foot).addScaledVector(reach, (len - 0.06) / dist);   // no further along than it's long
+    const hz = new THREE.Vector3(h.x - foot.x, 0, h.z - foot.z), dh = hz.length() || 1e-6; hz.divideScalar(dh);
+    const slope0 = (h.y - foot.y) / dh;
+    let slope = slope0;
+    for (let k = 1; k <= 40; k++) {
+      const sd = k / 40 * len, need = obstacleUnder(foot.clone().addScaledVector(hz, sd)) + 0.015;
+      if (need > -1) slope = Math.max(slope, (need - foot.y) / sd);
+    }
+    h.y = foot.y + slope * dh;
+    return slope - slope0;
+  };
+  let fwd, foot;
+  if (handleAt) ({ fwd, foot } = footFor(handle)), settle(handle, foot);
+  else {
+    // Laid down straight back along the shot if it fits on the table like that; if not, angled off to one side (as a
+    // player would) until it lies flat without touching anything; and failing that, straight back, raised to clear
+    const v0 = handle.clone().sub(p); v0.y = 0;
+    let chosen = null;
+    for (const a of [0, 0.12, -0.12, 0.25, -0.25, 0.4, -0.4, 0.55, -0.55]) {
+      const h = p.clone().add(v0.clone().applyAxisAngle(UP, a)); h.y = handle.y;
+      const f = footFor(h), tipped = settle(h, f.foot);
+      if (a === 0) chosen = { h, ...f };
+      if (tipped < 1e-4) { chosen = { h, ...f }; break; }
+    }
+    handle.copy(chosen.h); fwd = chosen.fwd; foot = chosen.foot;
   }
+  head.position.set(p.x, lift, p.z);
+  head.rotation.set(0, Math.atan2(-fwd.z, fwd.x), 0);      // its +x (built facing the cue ball) along fwd
+  head.scale.set(1, squat, 1);
   const along = handle.clone().sub(foot).normalize();
   rest.shaft.position.copy(foot); rest.shaft.quaternion.setFromUnitVectors(UP, along);
   rest.shaft.children[0].scale.set(1, len, 1); rest.cap.position.y = len - 0.01;
