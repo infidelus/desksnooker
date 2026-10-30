@@ -191,6 +191,7 @@
     <h2>Quest controls</h2>
     <dl>
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
+      <dt>Trigger + left stick</dt><dd>While the cue is locked, push left or right to fine-tune the aim (a gentle push for the smallest changes; a tick every 0.1°)</dd>
       <dt>Left stick</dt><dd>Slide the table around</dd>
       <dt>Right stick</dt><dd>Left/right rotates the table round you</dd>
       <dt>Right grip + right stick</dt><dd>Hold the grip and push the stick up or down to raise or lower the table</dd>
@@ -349,7 +350,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 43;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 44;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3550,6 +3551,10 @@ const tableRows = [
     { t: () => 'Beyond the table', on: () => settings.board !== 'centre', act: () => { settings.board = 'far'; } },
     { t: () => 'Over the middle', on: () => settings.board === 'centre', act: () => { settings.board = 'centre'; } },
   ] },
+  { label: 'Headset aim', btns: [
+    { t: () => 'Steadied', on: () => settings.aimSteady !== false, act: () => { settings.aimSteady = true; } },
+    { t: () => 'Raw', on: () => settings.aimSteady === false, act: () => { settings.aimSteady = false; } },
+  ] },
   { label: 'Your cue', btns: Object.keys(CUE_STYLES).map(k => ({ t: () => CUE_STYLES[k].label, on: () => (settings.cueStyle || 'pro') === k, act: () => { settings.cueStyle = k; buildCue(cue, k); netSend({ t: 'cue', style: k }); } })) },
   { label: 'After a shot', btns: [
     { t: () => 'Turn to the shot', on: () => settings.follow === 'aim', act: () => { settings.follow = 'aim'; } },
@@ -3700,20 +3705,22 @@ function drawMenu() {
     }
   } else {
     const rows = menuPage === 'play' ? playRows : menuPage === 'coach' ? coachRows : tableRows;
+    // Rows squeeze up a little when a page has a lot of them, so they always clear the buttons at the bottom
+    const step = Math.min(menuPage === 'coach' ? 78 : 84, Math.floor((c.height - 150 - y) / rows.length)), bh = step - 12;
     for (const row of rows) {
       g.fillStyle = '#9fb2a8'; g.font = `400 28px ${BODY}`;
-      g.fillText(row.label, 40, y + 36);
+      g.fillText(row.label, 40, y + bh / 2);
       const x0 = 250, x1 = 984, gap = 12;
       const total = row.btns.reduce((t, b) => t + (b.w || 1), 0);
       const unit = (x1 - x0 - gap * (row.btns.length - 1)) / total;
       let x = x0;
       for (const b of row.btns) {
         const bw = unit * (b.w || 1);
-        if (b.val) { g.fillStyle = '#e9efe9'; g.font = `700 26px ${BODY}`; g.textAlign = 'center'; g.fillText(b.t(), x + bw / 2, y + 36); g.textAlign = 'left'; }
-        else button(b, x, y, bw, 72, b.t(), b.on && b.on());
+        if (b.val) { g.fillStyle = '#e9efe9'; g.font = `700 26px ${BODY}`; g.textAlign = 'center'; g.fillText(b.t(), x + bw / 2, y + bh / 2); g.textAlign = 'left'; }
+        else button(b, x, y, bw, bh, b.t(), b.on && b.on());
         x += bw + gap;
       }
-      y += menuPage === 'coach' ? 78 : 84;
+      y += step;
     }
     if (menuPage === 'play') {
       g.fillStyle = '#9fb2a8'; g.font = `400 24px ${BODY}`;
@@ -4016,6 +4023,14 @@ function updateHeadsetCue(dt, now) {
       dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cueHand.ray.quaternion);
       offset = behindBall(dir, 0.35);
     }
+    // Steady the aim: tiny wobbles of the hands are smoothed out (they swing a long guide line a lot);
+    // anything bigger is followed straight away
+    if (settings.aimSteady !== false) {
+      const a = cueState.sdir ? Math.acos(Math.max(-1, Math.min(1, cueState.sdir.dot(dir)))) : 1;
+      if (a > 0.06) cueState.sdir = dir.clone();
+      else cueState.sdir.lerp(dir, 1 - Math.exp(-dt * (a < 0.012 ? 5 : 22))).normalize();
+      dir = cueState.sdir.clone();
+    }
     // Never through the cushion or rail: strike higher and raise the butt instead
     const lifted = liftOverEdge(back.clone().addScaledVector(dir, offset), dir);
     dir = lifted.dir;
@@ -4035,6 +4050,17 @@ function updateHeadsetCue(dt, now) {
 
   let dir, free = null;
   if (cueState.locked) {
+    // Fine aim while locked: the left stick turns the cue round the cue ball, gently for a small push
+    const nx = axis(hands.left, 2);
+    if (nx) {
+      const a = -Math.sign(nx) * nx * nx * 1.2 * Math.PI / 180 * dt;
+      table.updateMatrixWorld();
+      const c = table.localToWorld(new THREE.Vector3(cueBall.x, R, cueBall.z));
+      for (const v of [cueState.anchor, cueState.bridgePoint]) if (v) v.sub(c).applyAxisAngle(UP, a).add(c);
+      cueState.dir.applyAxisAngle(UP, a);
+      cueState.nudged = (cueState.nudged || 0) + Math.abs(a);
+      if (cueState.nudged > 0.1 * Math.PI / 180) { cueState.nudged = 0; pulse(hands.left, 0.35, 35); }   // a tick every 0.1°
+    }
     dir = cueState.dir;
     const s = tmpV.copy(back).sub(cueState.anchor).dot(dir) - (cueState.s0 || 0);
     tipWorld.copy(cueState.anchor).addScaledVector(dir, s + cueState.offset);

@@ -40,3 +40,7 @@ This reads `index.src.html`, embeds each `@@ASSET:name@@` file from `assets/` an
 - [three.js](https://threejs.org/) for 3D rendering.
 - Hand models from the [WebXR Input Profiles](https://github.com/immersive-web/webxr-input-profiles) generic hand assets.
 - Referee and coach voices made with [Airvoz](https://airvoz.com/); the female coach's voice with the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) text-to-speech model.
+
+## Licence
+
+Desk Snooker is released under the [MIT Licence](LICENSE). Third-party parts keep their own licences: three.js, PeerJS and the WebXR Input Profiles hand models are MIT; the Kokoro voice model is Apache 2.0.
