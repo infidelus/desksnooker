@@ -191,7 +191,7 @@
     <h2>Quest controls</h2>
     <dl>
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
-      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: its head is set down behind the cue ball and your bridge hand holds the butt. Swing the butt left or right to turn the rest about its head, raise it slightly to lift the head off the cloth, or lift it well up to pick the rest up and put it down somewhere else. Rests are a fixed length: pull back past the end and the head is dragged with you. Your cue hand plays the shot. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
+      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand holds it and it points where your hand points, coming out raised. Tip your wrist down to set its head on the cloth behind the cue ball; once down, swing the butt left or right to turn the rest about its head, tilt your wrist up slightly to lift the head a touch, or further to lift it clear. Rests are a fixed length: pull back past the end and the head is dragged with you. For a rest shot the table glides round to put you at the cushion. Your cue hand plays the shot. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
       <dt>Trigger + left stick</dt><dd>While the cue is locked, push left or right to fine-tune the aim (a gentle push for the smallest changes; a tick every 0.1°)</dd>
       <dt>Left stick</dt><dd>Slide the table around</dd>
       <dt>Right stick</dt><dd>Left/right rotates the table round you</dd>
@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 48;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 49;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -772,15 +772,34 @@ function buildTableMeshes() {
   const bed = extrudeXZ(roundedRect(Xo - bi, Zo - bi, 0.08), holes, -0.03, 0, clothMat);
   tableStatic.add(bed);
 
-  // Pockets: a dark throat, a net hanging below, and a cream leather lip round the back
+  // Pockets: a dark throat, a cream leather lip round the back, and underneath, a chrome runner: a pair of rails
+  // under the edge of the table that potted balls roll along to the end of, where the referee takes them out
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xd8d8dc, roughness: 0.2, metalness: 1, envMap: roomEnv });
+  const rod = (a, b, r = 0.0035) => {
+    const d = b.clone().sub(a), m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, d.length(), 8), chrome);
+    m.position.copy(a).add(b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(UP, d.normalize()); tableStatic.add(m);
+  };
   for (const p of pockets) {
     const throat = new THREE.Mesh(new THREE.CylinderGeometry(p.r - 0.0015, p.r - 0.0015, 0.12, 32, 1, true), throatMat);
     throat.position.set(p.x, -0.0605, p.z);
     tableStatic.add(throat);
-    const net = new THREE.Mesh(new THREE.SphereGeometry(p.r, 24, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), netMat);
-    net.scale.y = 1.5; net.position.set(p.x, -0.12, p.z);
-    tableStatic.add(net);
     p.restY = -0.12 - p.r * 1.5 + R + 0.004;
+    // The runner: corner pockets' run from the corner along the long side towards the middle; the middle pockets'
+    // run from the middle towards the black end. Ball centres sit just under the rail, outside the apron.
+    const zr = p.sz * (Zo - 0.03 + R + 0.006), y0 = -0.075 - 0.012 - R, len = 0.62;
+    const x0 = p.type === 'corner' ? p.sx * (L / 2 - 0.03) : 0.05, dirX = p.type === 'corner' ? -p.sx : 1;
+    const S = new THREE.Vector3(x0, y0, zr), E = new THREE.Vector3(x0 + dirX * len, y0 - 0.025, zr);
+    p.run = { S, E, len: S.distanceTo(E), dir: E.clone().sub(S).normalize() };
+    for (const k of [1, -1]) {
+      const off = new THREE.Vector3(0, -R * 0.62, k * R * 0.7);
+      rod(S.clone().add(off).addScaledVector(p.run.dir, -0.03), E.clone().add(off).addScaledVector(p.run.dir, 0.01));
+      // the drop from the pocket down on to the runner
+      const top = new THREE.Vector3(p.x, -0.07, p.z).add(new THREE.Vector3(k * (p.type === 'corner' ? 0 : 0.03), 0, k * (p.type === 'corner' ? 0.03 : 0)));
+      rod(top, S.clone().add(off).addScaledVector(p.run.dir, -0.03), 0.003);
+    }
+    // the stop at the end, and brackets up to the rail
+    rod(E.clone().add(new THREE.Vector3(0, -R * 0.7, 0)).addScaledVector(p.run.dir, R + 0.004), E.clone().add(new THREE.Vector3(0, R * 0.4, 0)).addScaledVector(p.run.dir, R + 0.004), 0.004);
+    for (const q of [S.clone().addScaledVector(p.run.dir, 0.06), E]) rod(q.clone().add(new THREE.Vector3(0, -R * 0.62, 0)), new THREE.Vector3(q.x, -0.075, q.z - p.sz * 0.012), 0.003);
     const outward = p.type === 'corner' ? Math.atan2(p.sz, p.sx) : Math.atan2(p.sz, 0);
     const span = p.type === 'corner' ? 3.3 : Math.PI * 0.95;
     const lip = new THREE.Mesh(new THREE.TorusGeometry(p.rc + 0.011, 0.011, 10, 32, span), leatherMat);
@@ -1787,9 +1806,36 @@ function updateFall(b, dt) {
   }
   f.t += dt;
   b.x = f.x; b.z = f.z;
-  if ((f.y <= floor + 1e-4 && f.vy === 0 && Math.hypot(f.vx, f.vz) < 0.03) || f.t > 1.6) {
-    b.falling = null; b.onTable = false; b.inPocket = { x: f.x, y: f.y, z: f.z };
+  // Once it's down through the pocket it's out of play, and runs on to the runner below
+  if (f.y < -0.07 || f.t > 1.6) toRunner(b, p, f.y);
+}
+
+// Potted balls run from the pocket on to its runner and roll along to the end, or up to the ball already there.
+// When the referee takes one out to re-spot it, those behind it roll on to fill the gap.
+let runnerSeq = 0;
+function toRunner(b, p, y = -0.08) {
+  if (!p) p = pockets.reduce((a, q) => Math.hypot(q.x - b.x, q.z - b.z) < Math.hypot(a.x - b.x, a.z - b.z) ? q : a, pockets[0]);
+  b.falling = null; b.onTable = false;
+  b.inPocket = { p, seq: runnerSeq++, x: b.x, y, z: b.z, d: 0, v: 0 };
+}
+const runnerTmp = new THREE.Vector3(), runnerAxis = new THREE.Vector3();
+function runnerStep(b, dt) {
+  const ip = b.inPocket, run = ip.p && ip.p.run;
+  if (!run) { b.mesh.position.set(ip.x, ip.y, ip.z); return; }
+  const ahead = balls.filter(o => o !== b && o.inPocket && o.inPocket.p === ip.p && o.inPocket.seq < ip.seq).length;
+  const start = runnerTmp.set(ip.x, ip.y, ip.z), l1 = start.distanceTo(run.S);
+  const target = l1 + Math.max(0, run.len - R - 0.004 - ahead * 2.03 * R);
+  const was = ip.d;
+  if (ip.d < target) { ip.v = Math.min(1.1, ip.v + 3.5 * dt); ip.d = Math.min(target, ip.d + ip.v * dt); }
+  else ip.v = 0;
+  if (ip.d < l1) b.mesh.position.copy(start).lerp(run.S, ip.d / l1);
+  else {
+    const t = (ip.d - l1) / run.len;
+    b.mesh.position.copy(run.S).lerp(run.E, t);
   }
+  // rolling along the rails
+  const moved = ip.d - was;
+  if (moved > 0 && ip.d > l1) { runnerAxis.set(-run.dir.z, 0, run.dir.x); qd.setFromAxisAngle(runnerAxis, -moved / R); b.mesh.quaternion.premultiply(qd); }
 }
 
 // The ball the cue ball is resting against, if any (within half a millimetre)
@@ -3898,10 +3944,19 @@ function followCueBall() {
     // the yaw that turns this line on the table to point straight ahead of you
     yaw = Math.atan2(-fwd.z, fwd.x) - Math.atan2(-dz, dx);
   }
-  const target = pos.clone().addScaledVector(fwd, 0.5);
+  // The shot's line on the table once it has turned, and whether you'd need the rest for it: if so you're taken to
+  // the cushion behind the cue ball, where you'd stand, rather than up to the ball itself
+  const turned = Math.atan2(-fwd.z, fwd.x) - yaw;
+  const lx = Math.cos(turned), lz = -Math.sin(turned);
+  let ax = cueBall.x, az = cueBall.z, ahead = 0.5;
+  if (restsOn() && reachNeed(balls, cueBall, lx, lz) !== 'none') {
+    const back = edgeBehind(cueBall.x, cueBall.z, lx, lz);
+    ax = cueBall.x - lx * back; az = cueBall.z - lz * back; ahead = 0.3;
+  }
+  const target = pos.clone().addScaledVector(fwd, ahead);
   table.updateMatrixWorld();
-  const from = table.localToWorld(new THREE.Vector3(cueBall.x, 0, cueBall.z));
-  Object.assign(tableGlide, { t: 0, yaw0: table.rotation.y, yaw1: table.rotation.y + Math.atan2(Math.sin(yaw - table.rotation.y), Math.cos(yaw - table.rotation.y)), from, to: target });
+  const from = table.localToWorld(new THREE.Vector3(ax, 0, az));
+  Object.assign(tableGlide, { t: 0, ax, az, yaw0: table.rotation.y, yaw1: table.rotation.y + Math.atan2(Math.sin(yaw - table.rotation.y), Math.cos(yaw - table.rotation.y)), from, to: target });
 }
 function updateTableGlide(dt) {
   if (tableGlide.t < 0) return;
@@ -3910,7 +3965,7 @@ function updateTableGlide(dt) {
   table.rotation.y = tableGlide.yaw0 + (tableGlide.yaw1 - tableGlide.yaw0) * k;
   table.updateMatrixWorld();
   // keep the cue ball on its smooth path from where it was to in front of you
-  const want = tableGlide.from.clone().lerp(tableGlide.to, k), now = table.localToWorld(new THREE.Vector3(cueBall.x, 0, cueBall.z));
+  const want = tableGlide.from.clone().lerp(tableGlide.to, k), now = table.localToWorld(new THREE.Vector3(tableGlide.ax ?? cueBall.x, 0, tableGlide.az ?? cueBall.z));
   table.position.x += want.x - now.x; table.position.z += want.z - now.z;
   if (tableGlide.t >= 1) tableGlide.t = -1;
 }
@@ -4017,47 +4072,57 @@ function updateHeadsetCue(dt, now) {
   const cueHand = hands[settings.hand], bridgeHand = hands[settings.hand === 'right' ? 'left' : 'right'];
   bridgeMarker.visible = !!bridgeHand && !menuOpen && settings.hands === 'off';
   const bridgeAt = bridgeHand ? railBridge(bridgeHand.grip.position) : null;
-  // On the rest, your bridge hand holds its butt and its head is set down on the cloth behind the cue ball. The head
-  // stays put while you swing the butt left and right round it, which turns the rest; raising the butt a little
-  // lifts the head a touch off the cloth. The rest is a fixed length, so pulling your hand back past its end drags
-  // the head after it, and pushing right up to the head slides it forward. Lift the butt well up and the whole
-  // rest comes with your hand, to be put down somewhere else.
+  // On the rest, your bridge hand holds its butt and the rest points along your hand, as a stick held in your fist
+  // would: it comes out raised, and tipping your wrist (or lowering your hand) brings its head down on to the cloth.
+  // Once down, the head stays put while you swing the butt round it; tilting your wrist up a little lifts the head a
+  // touch, and a little more lifts it clear, to be put down somewhere else. The rest is a fixed length, so pulling
+  // your hand back past its end drags the head after it, and pushing right up to the head slides it forward.
   cueState.restAt = null;
   if (bridgeAt && (cueState.need || 'none') !== 'none') {
     table.updateMatrixWorld();
+    const inv = table.quaternion.clone().invert();
     const h = table.worldToLocal(bridgeHand.grip.position.clone());
-    // The butt can't go through the cushion or rail, nor far below the cloth off the end of the table
-    const under = surfaceUnder(h); h.y = Math.max(h.y, under > -1 ? under + 0.016 : -0.1);
-    const len = REST_LEN[cueState.need];
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(bridgeHand.grip.quaternion).applyQuaternion(inv);
+    // The butt can't go through the cushion or rail
+    const under = surfaceUnder(h); if (under > -1) h.y = Math.max(h.y, under + 0.016);
+    const natural = REST_INFO[cueState.need].head, longest = REST_LEN[cueState.need] - 0.1;
+    const holdAt = d => Math.max(0.35, Math.min(longest, d));
     let rs = cueState.rest;
-    if (!rs || rs.kind !== cueState.need || (canShoot() && Math.hypot(rs.cbx - cueBall.x, rs.cbz - cueBall.z) > 0.01)) {
-      // First time it's needed for this shot: set the head down behind the cue ball, on the line from your hand
-      let ax = cueBall.x - h.x, az = cueBall.z - h.z; const n = Math.hypot(ax, az) || 1; ax /= n; az /= n;
-      const head = new THREE.Vector3(cueBall.x - ax * BRIDGE_BACK, 0, cueBall.z - az * BRIDGE_BACK);
-      rs = cueState.rest = { kind: cueState.need, cbx: cueBall.x, cbz: cueBall.z, carried: false, head, base: h.y, lift: 0, off: null };
+    if (!rs || rs.kind !== cueState.need) {
+      // You take hold of it at the point on the shaft that puts its head just behind the cue ball
+      const ax = cueBall.x - h.x, az = cueBall.z - h.z, n = Math.hypot(ax, az) || 1;
+      rs = cueState.rest = { kind: cueState.need, down: false, head: new THREE.Vector3(), lift: 0, reach: holdAt(n - BRIDGE_BACK) };
     }
     if (!cueState.locked) {
-      const up = h.y - rs.base, head = rs.head;
-      if (!rs.carried && up > 0.07) { rs.carried = true; rs.off = new THREE.Vector3(head.x - h.x, 0, head.z - h.z); }   // picked up
-      else if (rs.carried && up < 0.03) { rs.carried = false; rs.base = h.y; }                                         // put down here
-      if (rs.carried) {
-        head.x = h.x + rs.off.x; head.z = h.z + rs.off.z;
-        rs.lift = Math.min(0.15, 0.02 + (up - 0.07));
-      } else {
-        rs.lift = Math.max(0, Math.min(0.02, up * 0.25));
-        rs.base = Math.min(rs.base, h.y);                                   // the lowest you've held it is "down"
-        const vx = h.x - head.x, vz = h.z - head.z, dd = Math.hypot(vx, vz) || 1;
-        const most = len - 0.1, least = 0.35;
-        if (dd > most) { head.x += vx * (dd - most) / dd; head.z += vz * (dd - most) / dd; }          // dragged
-        else if (dd < least) { head.x += vx * (dd - least) / dd; head.z += vz * (dd - least) / dd; }  // pushed
+      const reach = rs.reach, tip = h.clone().addScaledVector(f, reach);   // where the head would be, held rigidly in your hand
+      const g = surfaceUnder(tip);
+      if (!rs.down) {
+        rs.head.copy(tip); rs.lift = 0;
+        if (g > -1 && g < 0.002 && tip.y <= g) {
+          // It touches the cloth: the head stands there, the shaft flattening as it goes down
+          rs.down = true;
+          const fh = new THREE.Vector3(f.x, 0, f.z).normalize(), flat = Math.sqrt(Math.max(0, reach * reach - h.y * h.y));
+          rs.head.set(h.x + fh.x * flat, 0, h.z + fh.z * flat);
+        } else if (g > -1 && tip.y < g) rs.head.y = g;            // resting on the cushion or rail, not through it
       }
-      // Keep the head on the cloth, and off the cue ball
-      head.x = Math.max(-L / 2 + 0.03, Math.min(L / 2 - 0.03, head.x));
-      head.z = Math.max(-W / 2 + 0.03, Math.min(W / 2 - 0.03, head.z));
-      const cx = head.x - cueBall.x, cz = head.z - cueBall.z, cd = Math.hypot(cx, cz) || 1;
-      if (cd < R + 0.05) { head.x = cueBall.x + cx / cd * (R + 0.05); head.z = cueBall.z + cz / cd * (R + 0.05); }
+      if (rs.down) {
+        const above = tip.y - Math.max(0, g);
+        if (above > 0.06) { rs.down = false; rs.reach = holdAt(Math.hypot(rs.head.x - h.x, rs.head.z - h.z)); rs.head.copy(h).addScaledVector(f, rs.reach); rs.lift = 0; }   // lifted clear
+        else {
+          rs.lift = Math.max(0, Math.min(0.02, (above - 0.015) * 0.45));
+          const head = rs.head, vx = h.x - head.x, vz = h.z - head.z, dd = Math.hypot(vx, vz) || 1;
+          const most = longest, least = 0.35;
+          if (dd > most) { head.x += vx * (dd - most) / dd; head.z += vz * (dd - most) / dd; }          // dragged
+          else if (dd < least) { head.x += vx * (dd - least) / dd; head.z += vz * (dd - least) / dd; }  // pushed
+          // Keep the head on the cloth, and off the cue ball
+          head.x = Math.max(-L / 2 + 0.03, Math.min(L / 2 - 0.03, head.x));
+          head.z = Math.max(-W / 2 + 0.03, Math.min(W / 2 - 0.03, head.z));
+          const cx = head.x - cueBall.x, cz = head.z - cueBall.z, cd = Math.hypot(cx, cz) || 1;
+          if (cd < R + 0.05) { head.x = cueBall.x + cx / cd * (R + 0.05); head.z = cueBall.z + cz / cd * (R + 0.05); }
+        }
+      }
     }
-    const q = new THREE.Vector3(rs.head.x, REST_INFO[cueState.need].head + rs.lift + 0.006, rs.head.z);
+    const q = new THREE.Vector3(rs.head.x, rs.head.y + natural + rs.lift + 0.006, rs.head.z);
     bridgeAt.copy(table.localToWorld(q)); bridgeAt.onRail = false;
     cueState.restAt = bridgeAt.clone();
   } else cueState.rest = null;
@@ -4145,11 +4210,16 @@ function updateHeadsetCue(dt, now) {
     // Which rest (if any) this line needs; a double buzz in the bridge hand when you first need one
     table.updateMatrixWorld();
     const dl = dir.clone().applyQuaternion(table.quaternion.clone().invert());
-    const need = canShoot() && !ballInHand ? reachNeed(balls, cueBall, dl.x, dl.z) : 'none';
-    if (need !== (cueState.need || 'none')) {
-      if (need !== 'none' && bridgeHand) { pulse(bridgeHand, 0.5, 50); setTimeout(() => pulse(bridgeHand, 0.5, 50), 140); }
-      cueState.need = need;
+    // It's put away while the balls run and while the table glides round to your next shot, and doesn't change
+    // mid-stroke; otherwise a change only sticks once the shot has needed it for a moment, so it doesn't flicker
+    const ready = canShoot() && !ballInHand && tableGlide.t < 0;
+    const want = !ready ? 'none' : cueState.locked ? cueState.need || 'none' : reachNeed(balls, cueBall, dl.x, dl.z);
+    if (want === (cueState.need || 'none')) cueState.needT = 0;
+    else if (!ready || (cueState.needT = (cueState.needT || 0) + dt) > 0.35) {
+      if (want !== 'none' && bridgeHand) { pulse(bridgeHand, 0.5, 50); setTimeout(() => pulse(bridgeHand, 0.5, 50), 140); }
+      cueState.need = want; cueState.needT = 0;
     }
+    const need = cueState.need || 'none';
     const restHold = need !== 'none' && cueState.restAt ? placeRest(playerRest, need, cueState.restAt, dir, settings.hand === 'right' ? 'left' : 'right', bridgeHand.grip.position) : placeRest(playerRest, 'none');
     setExtension(cue, need);
     updateHands(true, tipWorld, dir, gripPoint, bridgePoint, restHold);
@@ -4525,9 +4595,9 @@ function updateHands(show, tip, dir, gripPoint, bridgePoint, restHold = null) {
 const REACH = 0.95, BRIDGE_BACK = 0.28, CUE_REACH = 1.6, EXT_REACH = 2.05;
 const REST_INFO = {
   none:      { name: '',                           aim: 0,    speed: 9,   spin: 1,    head: 0 },
-  rest:      { name: 'the rest',                   aim: 0.12, speed: 5.0, spin: 0.7,  head: 0.05 },
-  extension: { name: 'the rest and an extension', aim: 0.2,  speed: 4.4, spin: 0.55, head: 0.05 },
-  long:      { name: 'the long rest and an extended cue', aim: 0.28, speed: 4.0, spin: 0.45, head: 0.05 },
+  rest:      { name: 'the rest',                   aim: 0.12, speed: 5.0, spin: 0.7,  head: 0.048 },
+  extension: { name: 'the rest and an extension', aim: 0.2,  speed: 4.4, spin: 0.55, head: 0.048 },
+  long:      { name: 'the long rest and an extended cue', aim: 0.28, speed: 4.0, spin: 0.45, head: 0.048 },
   spider:    { name: 'the spider',                 aim: 0.25, speed: 4.2, spin: 0.5,  head: 0.11 },
   swan:      { name: 'the swan',                   aim: 0.25, speed: 4.2, spin: 0.5,  head: 0.08 },
 };
@@ -4577,26 +4647,35 @@ function makeRest() {
   const knob = (p, r = 0.0055) => { const k = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), rubber); k.position.copy(p); return k; };
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
   const heads = {};
-  { // the cross: two brass bars crossed at right angles, black rubber on each end; the cue lies in the upper V
-    const h = new THREE.Group(), c = 0.04, e = 0.039;
+  { // the cross: two short, flat brass bars crossed at right angles, a black rubber cap on each end; the cue lies
+    // in the upper V. About 7 cm across.
+    const h = new THREE.Group(), c = 0.032, e = 0.03;
     for (const s of [1, -1]) {
-      h.add(bar(V(0, c - e, -s * e), V(0, c + e, s * e), 0.0032));
-      h.add(knob(V(0, c - e, -s * e))); h.add(knob(V(0, c + e, s * e)));
+      const a = V(0, c - e, -s * e), b = V(0, c + e, s * e), along = b.clone().sub(a).normalize();
+      const flat = new THREE.Mesh(new THREE.BoxGeometry(0.006, a.distanceTo(b), 0.012), brass);
+      flat.position.copy(a).add(b).multiplyScalar(0.5); flat.quaternion.setFromUnitVectors(UP, along); h.add(flat);
+      for (const [end, sgn] of [[a, -1], [b, 1]]) {
+        const capM = new THREE.Mesh(new THREE.CylinderGeometry(0.0065, 0.0065, 0.014, 10), rubber);
+        capM.position.copy(end).addScaledVector(along, sgn * 0.004); capM.quaternion.setFromUnitVectors(UP, along); h.add(capM);
+      }
     }
-    const boss = bar(V(-0.012, c, 0), V(0.006, c, 0), 0.0075); h.add(boss);
-    h.userData.attach = [-0.012, c];
+    h.add(bar(V(-0.03, c - 0.004, 0), V(0.004, c, 0), 0.0085));          // the socket the shaft screws into
+    h.userData.attach = [-0.03, c - 0.004];
     heads.rest = heads.extension = heads.long = h;
   }
-  { // the spider: an arch on splayed legs that stands over a ball, with three notches along its top
-    const h = new THREE.Group(), top = 0.105;
-    for (const s of [1, -1]) {
-      h.add(bar(V(0, top, s * 0.035), V(0, 0.004, s * 0.07), 0.0035));
-      h.add(knob(V(0, 0.004, s * 0.07), 0.005));
-      h.add(bar(V(-0.05, 0.075, 0), V(0, top, s * 0.03), 0.003));      // braces back to the shaft
-    }
-    h.add(bar(V(0, top, -0.045), V(0, top, 0.045), 0.004));
-    for (const z of [-0.025, 0, 0.025]) for (const s of [1, -1]) h.add(bar(V(0, top, z + s * 0.007), V(0, top + 0.01, z + s * 0.011), 0.0022));
-    h.userData.attach = [-0.05, 0.075];
+  { // the spider: a flat brass arch on two legs with rubber feet, with three V notches along its crown
+    const h = new THREE.Group(), sh = new THREE.Shape();
+    const pts = [[-0.062, 0.012], [-0.062, 0.078], [-0.052, 0.098], [-0.04, 0.115], [-0.026, 0.1], [-0.0125, 0.115], [0, 0.1],
+      [0.0125, 0.115], [0.026, 0.1], [0.04, 0.115], [0.052, 0.098], [0.062, 0.078], [0.062, 0.012], [0.05, 0.012], [0.05, 0.05]];
+    sh.moveTo(...pts[0]); for (const q of pts.slice(1)) sh.lineTo(...q);
+    sh.absarc(0, 0.05, 0.05, 0, Math.PI, false);                           // the inside of the arch
+    sh.lineTo(-0.05, 0.012); sh.closePath();
+    for (const z of [-0.022, 0.022]) { const hole = new THREE.Path(); hole.absarc(z, 0.088, 0.0055, 0, Math.PI * 2, true); sh.holes.push(hole); }
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.005, bevelEnabled: false }); geo.translate(0, 0, -0.0025); geo.rotateY(Math.PI / 2);
+    h.add(new THREE.Mesh(geo, brass));
+    for (const z of [-0.056, 0.056]) { const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.0068, 0.0068, 0.016, 10), rubber); foot.position.set(0, 0.008, z); h.add(foot); }
+    h.add(bar(V(-0.035, 0.085, 0), V(0.002, 0.09, 0), 0.0075));
+    h.userData.attach = [-0.035, 0.085];
     heads.spider = h;
   }
   { // the swan: a long brass neck that curves up and forward from the shaft, with a small fork at its end
@@ -5555,7 +5634,7 @@ const clock = new THREE.Clock();
 const qd = new THREE.Quaternion(), axisV = new THREE.Vector3();
 function syncBallMeshes(dt) {
   for (const b of balls) {
-    if (b.inPocket) { b.mesh.position.set(b.inPocket.x, b.inPocket.y, b.inPocket.z); b.shadow.visible = false; continue; }
+    if (b.inPocket) { runnerStep(b, dt); b.shadow.visible = false; continue; }
     if (!b.onTable && !b.falling) continue;
     b.mesh.position.set(b.x, b.falling ? b.falling.y : R, b.z);
     b.shadow.position.set(b.x, 0.0008, b.z);
@@ -5792,7 +5871,7 @@ function tryRemoteEnd() {
     const b = balls[i];
     b.vx = b.vz = b.wx = b.wy = b.wz = 0;
     if (on) { b.falling = null; b.place(x, z); b.onTable = true; b.show(true); }
-    else if (b.onTable || b.falling || !b.inPocket) { b.falling = null; b.onTable = false; b.inPocket = { x, y: -0.1, z }; }
+    else if (b.onTable || b.falling || !b.inPocket) { b.x = x; b.z = z; toRunner(b, b.falling && b.falling.p); }
   });
   useRecord(s, e.rec);
   finishShot(s);
@@ -5879,7 +5958,7 @@ function settleNow() {
   let n = 0;
   while (anyMoving() && n++ < 60000) {
     physicsStep(balls, SUBSTEP, shot);
-    for (const b of balls) if (b.falling) { b.falling = null; b.onTable = false; b.inPocket = { x: b.x, y: -0.1, z: b.z }; }
+    for (const b of balls) if (b.falling) toRunner(b, b.falling.p, b.falling.y);
   }
   endShot();
 }
