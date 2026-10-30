@@ -191,7 +191,7 @@
     <h2>Quest controls</h2>
     <dl>
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
-      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: its head is set down behind the cue ball and your bridge hand holds the butt. Move the butt left, right, forwards or back to shift the head a little, raise it slightly to lift the head off the cloth, or lift it well up to pick the rest up and put it down somewhere else. Your cue hand plays the shot. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
+      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: its head is set down behind the cue ball and your bridge hand holds the butt. Swing the butt left or right to turn the rest about its head, raise it slightly to lift the head off the cloth, or lift it well up to pick the rest up and put it down somewhere else. Rests are a fixed length: pull back past the end and the head is dragged with you. Your cue hand plays the shot. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
       <dt>Trigger + left stick</dt><dd>While the cue is locked, push left or right to fine-tune the aim (a gentle push for the smallest changes; a tick every 0.1°)</dd>
       <dt>Left stick</dt><dd>Slide the table around</dd>
       <dt>Right stick</dt><dd>Left/right rotates the table round you</dd>
@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 47;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 48;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4017,42 +4017,45 @@ function updateHeadsetCue(dt, now) {
   const cueHand = hands[settings.hand], bridgeHand = hands[settings.hand === 'right' ? 'left' : 'right'];
   bridgeMarker.visible = !!bridgeHand && !menuOpen && settings.hands === 'off';
   const bridgeAt = bridgeHand ? railBridge(bridgeHand.grip.position) : null;
-  // On the rest, your bridge hand holds its butt. The head is planted on the cloth behind the cue ball, and moving
-  // the butt (left, right, forwards or back) moves the head a little, as a lever would; raising the butt lifts the
-  // head a touch off the cloth. Lift your hand well up and the whole rest comes with it, to put down somewhere else.
+  // On the rest, your bridge hand holds its butt and its head is set down on the cloth behind the cue ball. The head
+  // stays put while you swing the butt left and right round it, which turns the rest; raising the butt a little
+  // lifts the head a touch off the cloth. The rest is a fixed length, so pulling your hand back past its end drags
+  // the head after it, and pushing right up to the head slides it forward. Lift the butt well up and the whole
+  // rest comes with your hand, to be put down somewhere else.
   cueState.restAt = null;
   if (bridgeAt && (cueState.need || 'none') !== 'none') {
     table.updateMatrixWorld();
     const h = table.worldToLocal(bridgeHand.grip.position.clone());
     // The butt can't go through the cushion or rail, nor far below the cloth off the end of the table
     const under = surfaceUnder(h); h.y = Math.max(h.y, under > -1 ? under + 0.016 : -0.1);
+    const len = REST_LEN[cueState.need];
     let rs = cueState.rest;
-    if (!rs || rs.kind !== cueState.need || Math.hypot(rs.cbx - cueBall.x, rs.cbz - cueBall.z) > 0.01) {
-      // First time it's needed for this shot: plant the head behind the cue ball, on the line from your hand
+    if (!rs || rs.kind !== cueState.need || (canShoot() && Math.hypot(rs.cbx - cueBall.x, rs.cbz - cueBall.z) > 0.01)) {
+      // First time it's needed for this shot: set the head down behind the cue ball, on the line from your hand
       let ax = cueBall.x - h.x, az = cueBall.z - h.z; const n = Math.hypot(ax, az) || 1; ax /= n; az /= n;
-      rs = cueState.rest = { kind: cueState.need, cbx: cueBall.x, cbz: cueBall.z, carried: false,
-        planted: new THREE.Vector3(cueBall.x - ax * BRIDGE_BACK, 0, cueBall.z - az * BRIDGE_BACK), hand0: h.clone(), head: null, lift: 0 };
+      const head = new THREE.Vector3(cueBall.x - ax * BRIDGE_BACK, 0, cueBall.z - az * BRIDGE_BACK);
+      rs = cueState.rest = { kind: cueState.need, cbx: cueBall.x, cbz: cueBall.z, carried: false, head, base: h.y, lift: 0, off: null };
     }
     if (!cueState.locked) {
-      const up = h.y - rs.hand0.y;
-      if (!rs.carried && up > 0.07) { rs.carried = true; rs.planted.copy(rs.head); rs.planted.y = 0; rs.hand0.x = h.x; rs.hand0.z = h.z; }   // picked up
-      else if (rs.carried && up < 0.03) {                                             // put down again here
-        rs.carried = false; rs.planted.copy(rs.head); rs.planted.y = 0; rs.hand0.copy(h);
-      }
-      const head = rs.planted.clone();
+      const up = h.y - rs.base, head = rs.head;
+      if (!rs.carried && up > 0.07) { rs.carried = true; rs.off = new THREE.Vector3(head.x - h.x, 0, head.z - h.z); }   // picked up
+      else if (rs.carried && up < 0.03) { rs.carried = false; rs.base = h.y; }                                         // put down here
       if (rs.carried) {
-        head.x += h.x - rs.hand0.x; head.z += h.z - rs.hand0.z;
+        head.x = h.x + rs.off.x; head.z = h.z + rs.off.z;
         rs.lift = Math.min(0.15, 0.02 + (up - 0.07));
       } else {
-        head.x += (h.x - rs.hand0.x) * 0.35; head.z += (h.z - rs.hand0.z) * 0.35;
         rs.lift = Math.max(0, Math.min(0.02, up * 0.25));
-        rs.hand0.y = Math.min(rs.hand0.y, h.y);                                       // the lowest you've held it is "down"
+        rs.base = Math.min(rs.base, h.y);                                   // the lowest you've held it is "down"
+        const vx = h.x - head.x, vz = h.z - head.z, dd = Math.hypot(vx, vz) || 1;
+        const most = len - 0.1, least = 0.35;
+        if (dd > most) { head.x += vx * (dd - most) / dd; head.z += vz * (dd - most) / dd; }          // dragged
+        else if (dd < least) { head.x += vx * (dd - least) / dd; head.z += vz * (dd - least) / dd; }  // pushed
       }
-      // Keep the head on the cloth, a sensible distance behind the cue ball
-      const vx = head.x - cueBall.x, vz = head.z - cueBall.z, dd = Math.hypot(vx, vz) || 1, k = Math.max(0.1, Math.min(0.55, dd)) / dd;
-      head.x = Math.max(-L / 2 + 0.03, Math.min(L / 2 - 0.03, cueBall.x + vx * k));
-      head.z = Math.max(-W / 2 + 0.03, Math.min(W / 2 - 0.03, cueBall.z + vz * k));
-      rs.head = head;
+      // Keep the head on the cloth, and off the cue ball
+      head.x = Math.max(-L / 2 + 0.03, Math.min(L / 2 - 0.03, head.x));
+      head.z = Math.max(-W / 2 + 0.03, Math.min(W / 2 - 0.03, head.z));
+      const cx = head.x - cueBall.x, cz = head.z - cueBall.z, cd = Math.hypot(cx, cz) || 1;
+      if (cd < R + 0.05) { head.x = cueBall.x + cx / cd * (R + 0.05); head.z = cueBall.z + cz / cd * (R + 0.05); }
     }
     const q = new THREE.Vector3(rs.head.x, REST_INFO[cueState.need].head + rs.lift + 0.006, rs.head.z);
     bridgeAt.copy(table.localToWorld(q)); bridgeAt.onRail = false;
@@ -4553,38 +4556,59 @@ function reachNeed(list, cue, dirX, dirZ) {
   if (block !== null) return block < 0.15 ? 'swan' : 'spider';
   return back > EXT_REACH ? 'long' : back > CUE_REACH ? 'extension' : 'rest';
 }
-// The equipment: a long wooden shaft with a brass head (a cross, an arch or a swan's neck)
+// The equipment: a pale ash shaft of a fixed length, with a brass head (a cross, a spider or a swan's neck).
+// Each head is built facing +x (towards the cue ball), standing on the cloth, and says where the shaft joins it.
+const REST_LEN = { rest: 1.6, extension: 2.0, long: 2.6, spider: 1.6, swan: 1.6 };
 function makeRest() {
   const brass = new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.3, metalness: 0.9, envMap: roomEnv });
-  const wood = new THREE.MeshStandardMaterial({ color: 0x5a3418, roughness: 0.45 });
+  const ash = new THREE.MeshStandardMaterial({ color: 0xd9b98a, roughness: 0.55 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
   const g = new THREE.Group(); g.visible = false; scene.add(g);
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 1, 10), wood); g.add(shaft);
+  // The shaft runs up its own y axis from the head end (y = 0) to the butt (y = length)
+  const shaft = new THREE.Group(); g.add(shaft);
+  const woodGeo = new THREE.CylinderGeometry(0.0135, 0.009, 1, 12); woodGeo.translate(0, 0.5, 0);
+  const wood = new THREE.Mesh(woodGeo, ash); shaft.add(wood);
+  const ferrule = new THREE.Mesh(new THREE.CylinderGeometry(0.0095, 0.008, 0.05, 12), brass); ferrule.position.y = 0.025; shaft.add(ferrule);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.0142, 0.0142, 0.02, 12), brass); shaft.add(cap);
+  const bar = (from, to, r, mat = brass) => {        // a rod between two points
+    const d = to.clone().sub(from), m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, d.length(), 8), mat);
+    m.position.copy(from).add(to).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(UP, d.normalize()); return m;
+  };
+  const knob = (p, r = 0.0055) => { const k = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), rubber); k.position.copy(p); return k; };
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
   const heads = {};
-  { // the cross: an X of brass bars with rubber tips; the cue lies in the upper V, just above where they cross
-    const h = new THREE.Group(), rubber = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 }), arm = 0.1;
+  { // the cross: two brass bars crossed at right angles, black rubber on each end; the cue lies in the upper V
+    const h = new THREE.Group(), c = 0.04, e = 0.039;
     for (const s of [1, -1]) {
-      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, arm, 8), brass); b.rotation.x = s * Math.PI / 4; b.position.y = 0.04; h.add(b);
-      for (const e of [1, -1]) { const tip = new THREE.Mesh(new THREE.SphereGeometry(0.006, 8, 6), rubber); tip.position.set(0, 0.04 + e * arm / 2 * Math.SQRT1_2, s * e * arm / 2 * Math.SQRT1_2 * -1); h.add(tip); }
+      h.add(bar(V(0, c - e, -s * e), V(0, c + e, s * e), 0.0032));
+      h.add(knob(V(0, c - e, -s * e))); h.add(knob(V(0, c + e, s * e)));
     }
-    const boss = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.014, 10), brass); boss.rotation.z = Math.PI / 2; boss.position.set(-0.008, 0.04, 0); h.add(boss);
+    const boss = bar(V(-0.012, c, 0), V(0.006, c, 0), 0.0075); h.add(boss);
+    h.userData.attach = [-0.012, c];
     heads.rest = heads.extension = heads.long = h;
   }
-  { // the spider: a tall arch that stands over a ball
-    const h = new THREE.Group();
-    const arch = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.005, 6, 20, Math.PI), brass); arch.rotation.y = Math.PI / 2; arch.position.y = 0.055; h.add(arch);
-    for (const s of [1, -1]) { const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.055, 6), brass); leg.position.set(0, 0.027, s * 0.055); h.add(leg); }
-    const notch = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.012, 0.03), brass); notch.position.y = 0.11; h.add(notch);
+  { // the spider: an arch on splayed legs that stands over a ball, with three notches along its top
+    const h = new THREE.Group(), top = 0.105;
+    for (const s of [1, -1]) {
+      h.add(bar(V(0, top, s * 0.035), V(0, 0.004, s * 0.07), 0.0035));
+      h.add(knob(V(0, 0.004, s * 0.07), 0.005));
+      h.add(bar(V(-0.05, 0.075, 0), V(0, top, s * 0.03), 0.003));      // braces back to the shaft
+    }
+    h.add(bar(V(0, top, -0.045), V(0, top, 0.045), 0.004));
+    for (const z of [-0.025, 0, 0.025]) for (const s of [1, -1]) h.add(bar(V(0, top, z + s * 0.007), V(0, top + 0.01, z + s * 0.011), 0.0022));
+    h.userData.attach = [-0.05, 0.075];
     heads.spider = h;
   }
-  { // the swan: a long curved neck that reaches over and round a ball
+  { // the swan: a long brass neck that curves up and forward from the shaft, with a small fork at its end
     const h = new THREE.Group();
-    const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(-0.16, 0.02, 0), new THREE.Vector3(-0.1, 0.07, 0), new THREE.Vector3(-0.02, 0.085, 0), new THREE.Vector3(0, 0.075, 0)]);
-    h.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.005, 6), brass));
-    const fork = new THREE.Mesh(new THREE.TorusGeometry(0.01, 0.003, 6, 12, Math.PI), brass); fork.rotation.y = Math.PI / 2; fork.position.y = 0.07; h.add(fork);
+    const curve = new THREE.CatmullRomCurve3([V(-0.2, 0.025, 0), V(-0.15, 0.04, 0), V(-0.08, 0.085, 0), V(-0.02, 0.09, 0), V(0, 0.075, 0)]);
+    h.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.0045, 8), brass));
+    for (const s of [1, -1]) h.add(bar(V(0, 0.068, 0), V(0, 0.082, s * 0.012), 0.0025));
+    h.userData.attach = [-0.2, 0.025];
     heads.swan = h;
   }
   for (const h of new Set(Object.values(heads))) { h.visible = false; g.add(h); }
-  return { g, shaft, heads };
+  return { g, shaft, cap, heads };
 }
 const playerRest = makeRest(), oppRest = makeRest();
 // The extension: a dark piece screwed on to the butt of the cue
@@ -4599,21 +4623,19 @@ function setExtension(cueGroup, kind) {
   ext.visible = on;
   if (on) { const len = kind === 'long' ? 0.9 : 0.45; ext.scale.y = len / 0.45; ext.position.y = -1.45 - len / 2; }
 }
-// Put a rest under a cue: its head at `point` (in the room), the cue along `dir`; the shaft runs back off the table
-// on the bridge-hand side. Returns where its handle is and which way the shaft runs, for the hand that holds it.
+// Put a rest under a cue: its head at `point` (in the room), the cue along `dir`. The shaft runs back to the handle:
+// where the bridge hand holds it (in the headset), or else just in from the near cushion on the bridge-hand side.
+// Returns where its handle is and which way the shaft runs, for the hand that holds it.
 function placeRest(rest, kind, point, dir, bridgeSide, handleAt = null) {
   for (const h of new Set(Object.values(rest.heads))) h.visible = false;
   if (kind === 'none') { rest.g.visible = false; return null; }
   table.updateMatrixWorld();
-  const tq = table.quaternion, inv = tq.clone().invert();
+  const tq = table.quaternion, inv = tq.clone().invert(), len = REST_LEN[kind];
   const p = table.worldToLocal(point.clone()), d = dir.clone().applyQuaternion(inv); d.y = 0; d.normalize();
   const side = new THREE.Vector3(-d.z, 0, d.x).multiplyScalar(bridgeSide === 'left' ? -1 : 1);
   const head = rest.heads[kind]; head.visible = true;
-  // The head stands on the cloth (or just off it) with the cue lying in its top
+  // The head stands on the cloth (or a little off it) with the cue lying in its top
   const natural = REST_INFO[kind].head, lift = Math.max(0, p.y - 0.006 - natural);
-  head.position.set(p.x, lift, p.z); head.scale.set(1, Math.max(0.6, (p.y - 0.006 - lift) / natural), 1);
-  // The handle: where the bridge hand holds it (in the headset), or just in from the near cushion, a little to the
-  // bridge-hand side of the cue, as a player holds it
   let handle;
   if (handleAt) handle = table.worldToLocal(handleAt.clone());
   else {
@@ -4621,19 +4643,27 @@ function placeRest(rest, kind, point, dir, bridgeSide, handleAt = null) {
     handle = new THREE.Vector3(p.x, 0, p.z).addScaledVector(d, -back).addScaledVector(side, 0.07);
     handle.y = 0.025;
   }
-  const foot = new THREE.Vector3(p.x, lift + 0.012, p.z).addScaledVector(d, -0.035);
+  // The head turns with the shaft, which comes from behind it
+  const fwd = new THREE.Vector3(p.x - handle.x, 0, p.z - handle.z);
+  if (fwd.lengthSq() < 1e-6) fwd.set(d.x, 0, d.z);
+  fwd.normalize();
+  // (a cue lying lower than the head stands is shown with the head a little squat, rather than the cue through it)
+  const squat = Math.max(0.6, Math.min(1, (p.y - 0.006 - lift) / natural));
+  head.position.set(p.x, lift, p.z); head.rotation.set(0, Math.atan2(fwd.z, -fwd.x), 0); head.scale.set(1, squat, 1);
+  const [ax, ay] = head.userData.attach;
+  const foot = new THREE.Vector3(p.x, lift + ay * squat, p.z).addScaledVector(fwd, ax);
+  // The handle can't be further along than the shaft is long
+  const reach = handle.clone().sub(foot), dist = reach.length();
+  if (dist > len - 0.06) handle.copy(foot).addScaledVector(reach, (len - 0.06) / dist);
   // The shaft rides over the cushion and rail rather than through them
   handle.y = Math.max(handle.y, surfaceUnder(handle) + 0.016);
   for (let k = 1; k <= 20; k++) {
     const t = k / 20, q = foot.clone().lerp(handle, t), need = surfaceUnder(q) + 0.014;
     if (need > -1 && q.y < need) handle.y = foot.y + (need - foot.y) / t;
   }
-  // and runs on a little past the hand
-  const along = handle.clone().sub(foot).normalize(), end = handle.clone().addScaledVector(along, 0.12);
-  const mid = foot.clone().add(end).multiplyScalar(0.5), len = foot.distanceTo(end);
-  head.rotation.set(0, Math.atan2(-along.z, -along.x), 0);
-  rest.shaft.position.copy(mid); rest.shaft.scale.set(1, len, 1);
-  rest.shaft.quaternion.setFromUnitVectors(UP, along);
+  const along = handle.clone().sub(foot).normalize();
+  rest.shaft.position.copy(foot); rest.shaft.quaternion.setFromUnitVectors(UP, along);
+  rest.shaft.children[0].scale.set(1, len, 1); rest.cap.position.y = len - 0.01;
   rest.g.position.copy(table.position); rest.g.quaternion.copy(tq); rest.g.visible = true;
   return { handle: table.localToWorld(handle.clone()), shaftDir: along.applyQuaternion(tq) };
 }
@@ -5484,12 +5514,15 @@ function updateDesktop(dt) {
   const plKey = pl && pl.raised ? `${pl.height.toFixed(2)}|${Math.round(pl.elev * 180 / Math.PI)}` : '';
   if (plKey !== desk.playKey) { desk.playKey = plKey; desk.play = pl && pl.raised ? pl : null; drawSpinBall(); }
   cue.visible = show;
-  if (show) placeCueBehindBall(cue, ax, az, 0.01 + desk.power * 0.25, desk.tipX * 0.5, desk.tipY * 0.5, desk.elev * Math.PI / 180);
-  // The rest (if this shot needs one) under the cue, its shaft off to your bridge-hand side
+  // The rest (if this shot needs one) under the cue, its shaft off to your bridge-hand side. The spider and the swan
+  // hold the cue up high, so it's shown sloping down to the ball over them.
   desk.need = show && !ballInHand ? reachNeed(balls, cueBall, ax, az) : 'none';
+  const restBack = BRIDGE_BACK + desk.power * 0.25;
+  const restElev = desk.need === 'spider' || desk.need === 'swan' ? Math.atan2(REST_INFO[desk.need].head - R + 0.006, restBack + 0.01) : 0;
+  if (show) placeCueBehindBall(cue, ax, az, 0.01 + desk.power * 0.25, desk.tipX * 0.5, desk.tipY * 0.5, Math.max(desk.elev * Math.PI / 180, restElev));
   if (desk.need !== 'none') {
     const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(cue.quaternion);
-    placeRest(playerRest, desk.need, cue.position.clone().addScaledVector(cdir, -(BRIDGE_BACK + desk.power * 0.25)), cdir, settings.hand === 'right' ? 'left' : 'right');
+    placeRest(playerRest, desk.need, cue.position.clone().addScaledVector(cdir, -restBack), cdir, settings.hand === 'right' ? 'left' : 'right');
   } else placeRest(playerRest, 'none');
   setExtension(cue, desk.need);
   // Cue view: the camera sits low behind the cue ball and turns with the aim
