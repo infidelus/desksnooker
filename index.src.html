@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 62;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 63;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -791,37 +791,40 @@ function buildTableMeshes() {
     lip.rotation.z = outward - span / 2;
     lip.position.set(p.x, railTop - 0.006, p.z);
     tableStatic.add(lip);
-    // The leather pocket: a cup round the outside of the hole, standing a little proud of the rail
+    // The leather: a padded piece about an inch deep round the back of the hole, flush with the rail
     const toEdge = p.type === 'corner' ? Xo - Math.abs(p.x) : Zo - Math.abs(p.z);
-    const Rw = toEdge + 0.02, half = p.type === 'corner' ? Math.PI / 4 + Math.acos(toEdge / Rw) : Math.PI / 2;
+    const Rw = toEdge + 0.003, half = p.type === 'corner' ? Math.PI / 4 + Math.acos(Math.min(1, toEdge / Rw)) : Math.PI / 2;
     const top = new THREE.Mesh(new THREE.RingGeometry(p.rc + 0.02, Rw, 40, 1, -(outward + half), 2 * half), leatherMat);
-    top.rotation.x = -Math.PI / 2; top.position.set(p.x, railTop + 0.0012, p.z); tableStatic.add(top);
-    const wall = new THREE.Mesh(new THREE.CylinderGeometry(Rw, Rw, railTop + 0.08, 40, 1, true, Math.PI / 2 - outward - half, 2 * half), leatherMat);
-    wall.position.set(p.x, (railTop - 0.08) / 2, p.z); tableStatic.add(wall);
-    const under = new THREE.Mesh(new THREE.RingGeometry(p.r, Rw, 40, 1, -(outward + half), 2 * half), leatherMat);
-    under.rotation.x = Math.PI / 2; under.position.set(p.x, -0.08, p.z); tableStatic.add(under);
-    // The net, hanging below the leather and out past the apron, where you can see it
-    const ox = Math.cos(outward) * 0.035, oz = Math.sin(outward) * 0.035, nr = p.r * 1.25;
-    const net = new THREE.Mesh(new THREE.SphereGeometry(nr, 24, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), netMat);
-    net.scale.y = 1.3; net.position.set(p.x + ox, -0.08, p.z + oz);
-    tableStatic.add(net);
-    p.restY = -0.08 - nr * 1.3 + R + 0.004;
-    p.netX = p.x + ox; p.netZ = p.z + oz;
-    // The runner, outside the apron below the net: short and fairly steep. The corner pockets' run along the side
-    // towards the middle; the middle pockets' towards the baulk end.
-    const zr = p.sz * (Za + R + 0.006), len = 0.34;
-    const x0 = p.type === 'corner' ? p.sx * (L / 2 - 0.02) : -0.06, dirX = p.type === 'corner' ? -p.sx : -1;
-    const S = new THREE.Vector3(x0, p.restY - 0.03, zr), E = new THREE.Vector3(x0 + dirX * len, p.restY - 0.1, zr);
+    top.rotation.x = -Math.PI / 2; top.position.set(p.x, railTop + 0.003, p.z); tableStatic.add(top);
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(Rw, Rw, 0.026, 40, 1, true, Math.PI / 2 - outward - half, 2 * half), leatherMat);
+    pad.position.set(p.x, railTop + 0.003 - 0.013, p.z); tableStatic.add(pad);
+    // The runner, outside the apron: short and fairly steep. The corner pockets' run along the side towards the
+    // middle; the middle pockets' towards the baulk end.
+    const zr = p.sz * (Za + R + 0.006), len = 0.34, y0 = -0.2;
+    const x0 = p.type === 'corner' ? p.sx * (L / 2 - 0.04) : -0.06, dirX = p.type === 'corner' ? -p.sx : -1;
+    const S = new THREE.Vector3(x0, y0, zr), E = new THREE.Vector3(x0 + dirX * len, y0 - 0.07, zr);
     p.run = { S, E, len: S.distanceTo(E), dir: E.clone().sub(S).normalize() };
+    p.restY = -1; p.netX = p.x; p.netZ = p.z;
+    // The net: a bag from the pocket's hole down and out to the top of the runner, which the ball drops through
+    {
+      const topC = new THREE.Vector3(p.x, -0.075, p.z), botC = S.clone().add(new THREE.Vector3(0, R * 0.2, 0)).addScaledVector(p.run.dir, -0.01);
+      const h = topC.y - botC.y, g = new THREE.CylinderGeometry(p.r * 0.97, R * 1.35, h, 24, 6, true), pos = g.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const t = (h / 2 - pos.getY(i)) / h;                               // 0 at the top, 1 at the bottom
+        pos.setX(i, pos.getX(i) + (botC.x - topC.x) * t); pos.setZ(i, pos.getZ(i) + (botC.z - topC.z) * t);
+      }
+      g.computeVertexNormals();
+      const net = new THREE.Mesh(g, netMat); net.position.set(topC.x, (topC.y + botC.y) / 2, topC.z); tableStatic.add(net);
+    }
     for (const k of [1, -1]) {
       const off = new THREE.Vector3(0, -R * 0.62, k * R * 0.7);
-      rod(S.clone().add(off).addScaledVector(p.run.dir, -0.04), E.clone().add(off).addScaledVector(p.run.dir, 0.01));
+      rod(S.clone().add(off).addScaledVector(p.run.dir, -0.03), E.clone().add(off).addScaledVector(p.run.dir, 0.01));
     }
     // the stop at the end, and brackets back to the apron
     rod(E.clone().add(new THREE.Vector3(0, -R * 0.7, 0)).addScaledVector(p.run.dir, R + 0.004), E.clone().add(new THREE.Vector3(0, R * 0.5, 0)).addScaledVector(p.run.dir, R + 0.004), 0.004);
-    for (const q of [S.clone().addScaledVector(p.run.dir, 0.05), E]) {
-      const lo = q.clone().add(new THREE.Vector3(0, -R * 0.62, 0)), hi = new THREE.Vector3(q.x, q.y + 0.03, p.sz * Za);
-      rod(lo, new THREE.Vector3(q.x, hi.y, zr), 0.003); rod(new THREE.Vector3(q.x, hi.y, zr), hi, 0.003);
+    for (const q of [S.clone().addScaledVector(p.run.dir, 0.06), E]) {
+      const hi = new THREE.Vector3(q.x, q.y + 0.03, p.sz * Za);
+      rod(q.clone().add(new THREE.Vector3(0, -R * 0.62, 0)), new THREE.Vector3(q.x, hi.y, zr), 0.003); rod(new THREE.Vector3(q.x, hi.y, zr), hi, 0.003);
     }
   }
 
@@ -1822,10 +1825,27 @@ function updateFall(b, dt) {
   }
   f.t += dt;
   b.x = f.x; b.z = f.z;
-  // Once it has settled in the net it's out of play, and rolls out on to the runner below
-  if ((f.y <= floor + 1e-4 && f.vy === 0 && Math.hypot(f.vx, f.vz) < 0.03) || f.t > 1.6) toRunner(b, p, f.y);
+  // Once it's down through the hole it's out of play, and drops through the net on to the runner
+  if (f.y < -0.075 || f.t > 1.6) toRunner(b, p, f.y);
 }
 
+// When a runner is nearly full, the referee moves the ball at its end across to the emptiest one, so a pocket
+// never blocks up. One at a time, once the balls on the table and on the runners have all stopped.
+function tidyRunners() {
+  if (anyMoving() || !pockets.length) return;
+  const on = p => balls.filter(b => b.inPocket && b.inPocket.p === p);
+  if (balls.some(b => b.inPocket && b.inPocket.v > 0)) return;
+  for (const p of pockets) {
+    if (!p.run) continue;
+    const room = Math.floor((p.run.len - 0.004) / (2.03 * R)), here = on(p);
+    if (here.length < room - 1) continue;
+    const to = pockets.filter(q => q !== p && q.run).sort((a, c) => on(a).length - on(c).length)[0];
+    if (!to || on(to).length >= room - 2) continue;
+    const b = here.sort((a, c) => a.inPocket.seq - c.inPocket.seq)[0], from = b.mesh.position;
+    b.inPocket = { p: to, seq: runnerSeq++, x: from.x, y: from.y, z: from.z, d: 0, v: 0, carry: true };
+    return;
+  }
+}
 // Potted balls run from the pocket on to its runner and roll along to the end, or up to the ball already there.
 // When the referee takes one out to re-spot it, those behind it roll on to fill the gap.
 let runnerSeq = 0;
@@ -1839,15 +1859,21 @@ function runnerStep(b, dt) {
   const ip = b.inPocket, run = ip.p && ip.p.run;
   if (!run) { b.mesh.position.set(ip.x, ip.y, ip.z); return; }
   const ahead = balls.filter(o => o !== b && o.inPocket && o.inPocket.p === ip.p && o.inPocket.seq < ip.seq).length;
-  const start = runnerTmp.set(ip.x, ip.y, ip.z), l1 = start.distanceTo(run.S);
+  const start = runnerTmp.set(ip.x, ip.y, ip.z), l1 = start.distanceTo(run.S) + (ip.carry ? 0.8 : 0);
   // A full runner (six balls) leaves the rest waiting in the net until there's room
   const room = Math.floor((run.len - 0.004) / (2.03 * R));
   if (ahead >= room) { ip.d = 0; ip.v = 0; b.mesh.position.set(ip.x, ip.y + (ahead - room) * R * 1.1, ip.z); return; }
   const target = l1 + Math.max(0, run.len - R - 0.004 - ahead * 2.03 * R);
   const was = ip.d;
-  if (ip.d < target) { ip.v = Math.min(1.1, ip.v + 3.5 * dt); ip.d = Math.min(target, ip.d + ip.v * dt); }
+  if (ip.d < target) { ip.v = Math.min(ip.carry ? 1.6 : 1.1, ip.v + 3.5 * dt); ip.d = Math.min(target, ip.d + ip.v * dt); }
   else ip.v = 0;
-  if (ip.d < l1) b.mesh.position.copy(start).lerp(run.S, ip.d / l1);
+  if (ip.d < l1 && ip.carry) {
+    // Carried across by the referee: up from under the table, over it, and down on to the other runner
+    const t = ip.d / l1, sm = x => x * x * (3 - 2 * x), across = sm(Math.min(1, Math.max(0, (t - 0.25) / 0.5)));
+    const up = sm(Math.min(1, t < 0.5 ? t / 0.25 : (1 - t) / 0.25));
+    b.mesh.position.copy(start).lerp(run.S, across);
+    b.mesh.position.y += (0.2 - b.mesh.position.y) * up;
+  } else if (ip.d < l1) b.mesh.position.copy(start).lerp(run.S, ip.d / l1);
   else {
     const t = (ip.d - l1) / run.len;
     b.mesh.position.copy(run.S).lerp(run.E, t);
@@ -4729,7 +4755,8 @@ function reachNeed(list, cue, dirX, dirZ) {
 }
 // The equipment: a pale ash shaft of a fixed length, with a brass head (a cross, a spider or a swan's neck).
 // Each head is built facing +x (towards the cue ball), standing on the cloth, and says where the shaft joins it.
-const REST_LEN = { rest: 1.6, extension: 2.0, long: 2.6, spider: 1.6, swan: 1.6 };
+// (about 60 inches for the cross, spider and swan; the half-butt, 84 inches, with an extended cue)
+const REST_LEN = { rest: 1.52, extension: 2.13, long: 2.13, spider: 1.52, swan: 1.52 };
 function makeRest() {
   const brass = new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.3, metalness: 0.9, envMap: roomEnv });
   const ash = new THREE.MeshStandardMaterial({ color: 0xd9b98a, roughness: 0.55 });
@@ -4827,15 +4854,15 @@ function buildRestRack() {
     return r;
   };
   hang('spider', 1, -0.34, 0.8); hang('swan', 1, -0.41, -0.8);
-  hang('long', -1, -0.34, 1.3);
+  hang('long', -1, -0.34, 1.065);
   hangEnd('rest', -1); hangEnd('rest2', 1);
 }
 buildRestRack();
 function updateRestRack() {
-  // (the X rest at the baulk end is the one taken; the long rest is also the one used with an extended cue)
+  // (the X rest at the baulk end is the one taken; the half-butt is the one used with an extended cue)
   const inUse = k => (playerRest.g.visible && playerRest.kind === k) || (oppRest.g.visible && oppRest.kind === k);
   for (const [name, r] of Object.entries(restRack))
-    r.g.visible = !(name === 'rest2' ? false : name === 'rest' ? inUse('rest') || inUse('extension') : inUse(name));
+    r.g.visible = !(name === 'rest2' ? false : name === 'long' ? inUse('long') || inUse('extension') : inUse(name));
 }
 // The extension: a dark piece screwed on to the butt of the cue
 function setExtension(cueGroup, kind) {
@@ -4863,6 +4890,7 @@ function placeRest(rest, kind, point, dir, bridgeSide, handleAt = null, rigid = 
   rest.kind = kind;
   if (kind === 'none') { rest.g.visible = false; return null; }
   table.updateMatrixWorld();
+  rest.g.position.copy(table.position); rest.g.quaternion.copy(table.quaternion); rest.g.updateMatrixWorld();
   const tq = table.quaternion, inv = tq.clone().invert(), len = REST_LEN[kind];
   const p = table.worldToLocal(point.clone()), d = dir.clone().applyQuaternion(inv); d.y = 0; d.normalize();
   const side = new THREE.Vector3(-d.z, 0, d.x).multiplyScalar(bridgeSide === 'left' ? -1 : 1);
@@ -4919,14 +4947,19 @@ function placeRest(rest, kind, point, dir, bridgeSide, handleAt = null, rigid = 
   head.position.set(p.x, lift, p.z);
   head.rotation.set(0, Math.atan2(-fwd.z, fwd.x), 0);      // its +x (built facing the cue ball) along fwd
   head.scale.set(1, squat, 1);
-  if (rigid) {
-    // Held up off the cloth, the head is fixed to the shaft and tips with it (it's made to stand upright when the
-    // shaft slopes up to the hand at about 7 degrees), turning about the joint
-    const sl = handle.clone().sub(foot), tilt = Math.atan2(sl.y, Math.hypot(sl.x, sl.z)) - 0.12;
+  {
+    // The head is fixed to the shaft and tips with it, turning about the joint (it's made to stand upright when the
+    // shaft slopes up to the hand at about 4 degrees). Down on the cloth, it rocks on its feet rather than sinking in.
+    const sl = handle.clone().sub(foot), tilt = Math.atan2(sl.y, Math.hypot(sl.x, sl.z)) - 0.07;
     head.rotation.z = -tilt;
     head.updateMatrix();
     const joint = new THREE.Vector3(ax, ay * squat, 0).applyMatrix4(head.matrix);   // where the joint is now
     head.position.add(foot.clone().sub(joint));
+    if (!rigid) {
+      head.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(head), g = (box.min.y - rest.g.position.y) - lift;   // (in table space)
+      if (Math.abs(g) > 1e-4) { head.position.y -= g; foot.y -= g; }
+    }
   }
   const along = handle.clone().sub(foot).normalize();
   rest.shaft.position.copy(foot); rest.shaft.quaternion.setFromUnitVectors(UP, along);
@@ -5865,6 +5898,7 @@ function loop(time) {
   updatePhysics(dt);
   syncBallMeshes(dt);
   updateRestRack();
+  tidyRunners();
   updateOpponent(dt);
   updateRoom(dt);
   netUpdate();
