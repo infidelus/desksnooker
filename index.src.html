@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 52;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 53;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4881,7 +4881,9 @@ function updateOpponent(dt) {
   setExtension(aiCue, need);
   if (need === 'none' || opp.fade <= 0.01) { placeRest(oppRest, 'none'); return; }
   const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(aiCue.quaternion);
-  const hold = placeRest(oppRest, need, aiCue.position.clone().addScaledVector(cdir, -BRIDGE_BACK), cdir, 'left');
+  // Measured from where the tip settled behind the ball, not from the moving cue, so the rest stays still while he cues
+  const settled = opp.bridgeTip ? fromTable(opp.bridgeTip) : aiCue.position.clone();
+  const hold = placeRest(oppRest, need, settled.addScaledVector(cdir, -BRIDGE_BACK), cdir, 'left');
   const br = opp.rigs.left; br.setPose('grip');
   br.place(br.F, br.toPinky.clone().negate(), new THREE.Vector3(0, -1, 0), hold.shaftDir.clone().negate(), hold.handle);
 }
