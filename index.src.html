@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 55;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 56;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4637,11 +4637,11 @@ function updateHands(show, tip, dir, gripPoint, bridgePoint, restHold = null) {
 const REACH = 0.95, BRIDGE_BACK = 0.28, CUE_REACH = 1.6, EXT_REACH = 2.05;
 const REST_INFO = {
   none:      { name: '',                           aim: 0,    speed: 9,   spin: 1,    head: 0 },
-  rest:      { name: 'the rest',                   aim: 0.12, speed: 5.0, spin: 0.7,  head: 0.057 },
-  extension: { name: 'the rest and an extension', aim: 0.2,  speed: 4.4, spin: 0.55, head: 0.057 },
-  long:      { name: 'the long rest and an extended cue', aim: 0.28, speed: 4.0, spin: 0.45, head: 0.057 },
-  spider:    { name: 'the spider',                 aim: 0.25, speed: 4.2, spin: 0.5,  head: 0.11 },
-  swan:      { name: 'the swan',                   aim: 0.25, speed: 4.2, spin: 0.5,  head: 0.08 },
+  rest:      { name: 'the rest',                   aim: 0.04, speed: 5.0, spin: 0.7,  head: 0.057 },
+  extension: { name: 'the rest and an extension', aim: 0.06, speed: 4.4, spin: 0.55, head: 0.057 },
+  long:      { name: 'the long rest and an extended cue', aim: 0.09, speed: 4.0, spin: 0.45, head: 0.057 },
+  spider:    { name: 'the spider',                 aim: 0.08, speed: 4.2, spin: 0.5,  head: 0.11 },
+  swan:      { name: 'the swan',                   aim: 0.08, speed: 4.2, spin: 0.5,  head: 0.08 },
 };
 const restsOn = () => settings.rests === 'guided' || settings.rests === 'visual';
 // How far it is from the cue ball back along the line of the shot to the outside of the table
