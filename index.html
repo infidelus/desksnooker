@@ -349,7 +349,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 42;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 43;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4211,8 +4211,9 @@ function updateBoardPose() {
   else {
     const me = table.worldToLocal(pos.clone()), d = Math.hypot(me.x, me.z) || 1, ux = -me.x / d, uz = -me.z / d;
     const t = Math.min((L / 2 + 0.45) / Math.max(1e-3, Math.abs(ux)), (W / 2 + 0.45) / Math.max(1e-3, Math.abs(uz)));
-    want = table.localToWorld(new THREE.Vector3(ux * t, 0.6, uz * t));
+    want = table.localToWorld(new THREE.Vector3(ux * t, 0.95, uz * t));
   }
+  board.mesh.scale.setScalar(settings.board === 'centre' ? 1 : 1.45);                  // bigger, as it's further away
   if (!board.placed || board.mesh.position.distanceTo(want) > 3) { board.mesh.position.copy(want); board.placed = true; }
   else board.mesh.position.lerp(want, 0.06);
   board.mesh.lookAt(pos.x, board.mesh.position.y, pos.z);
@@ -5041,11 +5042,14 @@ function updateCoachPanelPose(dt = 1 / 72) {
   if (!coachPanel.mesh.visible) { coachFollow.dir = null; return; }
   const { pos, fwd, right } = headPose();
   const away = settings.hand === 'left' ? right : right.clone().negate();          // the bridge-hand side
-  const want = fwd.clone().multiplyScalar(Math.cos(0.6)).addScaledVector(away, Math.sin(0.6)).normalize();
+  const want = fwd.clone().multiplyScalar(Math.cos(0.65)).addScaledVector(away, Math.sin(0.65)).normalize();
   const here = coachPanel.mesh.position.clone().sub(pos); here.y = 0;
-  const lost = !coachFollow.dir || here.length() < 0.4 || here.length() > 1.4 || here.normalize().dot(fwd) < Math.cos(0.8);
+  const lost = !coachFollow.dir || here.length() < 0.4 || here.length() > 1.4 || here.normalize().dot(fwd) < Math.cos(0.95);
   if (lost) coachFollow.dir = want;
-  coachFollow.target.copy(pos).addScaledVector(coachFollow.dir, 0.85); coachFollow.target.y = pos.y - 0.12;
+  coachFollow.target.copy(pos).addScaledVector(coachFollow.dir, 1.0); coachFollow.target.y = pos.y + 0.08;   // just above eye level
+  // While you're down on a shot (cue locked), it fades away so it's never in your way; the guides stay on the table
+  const mat = coachPanel.mesh.material, show = cueState.locked ? 0 : 1;
+  mat.opacity += (show - mat.opacity) * (1 - Math.exp(-dt * 8));
   if (!coachPanel.placed) { coachPanel.mesh.position.copy(coachFollow.target); coachPanel.placed = true; }
   coachPanel.mesh.position.lerp(coachFollow.target, 1 - Math.exp(-dt * 5));
   coachPanel.mesh.lookAt(pos.x, pos.y, pos.z);
