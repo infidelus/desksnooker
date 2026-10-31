@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 65;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 66;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1857,7 +1857,7 @@ function updateFall(b, dt) {
 // When a runner is nearly full, the referee moves the ball at its end across to the emptiest one, so a pocket
 // never blocks up. One at a time, once the balls on the table and on the runners have all stopped.
 function tidyRunners() {
-  if (anyMoving() || !pockets.length) return;
+  if (anyMoving() || !pockets.length || referee.job) return;
   const on = p => balls.filter(b => b.inPocket && b.inPocket.p === p);
   if (balls.some(b => b.inPocket && b.inPocket.v > 0)) return;
   for (const p of pockets) {
@@ -1867,9 +1867,47 @@ function tidyRunners() {
     const to = pockets.filter(q => q !== p && q.run).sort((a, c) => on(a).length - on(c).length)[0];
     if (!to || on(to).length >= room - 2) continue;
     const b = here.sort((a, c) => a.inPocket.seq - c.inPocket.seq)[0], from = b.mesh.position;
-    b.inPocket = { p: to, seq: runnerSeq++, x: from.x, y: from.y, z: from.z, d: 0, v: 0, carry: true };
+    // (it now belongs to the other runner, so those behind it roll on; the referee's hand takes it there)
+    b.inPocket = { p: to, seq: runnerSeq++, x: from.x, y: from.y, z: from.z, d: 0, v: 0, held: true };
+    referee.job = { b, ip: b.inPocket, from: from.clone(), to, t: 0 };
     return;
   }
+}
+// The referee's white-gloved hand: it reaches down to the ball, takes it, lifts it over the table and round to the
+// other pocket, hovers over it and lets go (the ball drops through the net on to the runner), then withdraws.
+const referee = { rig: null, job: null };
+const gloveMat = patchEnv(new THREE.MeshStandardMaterial({ color: 0xf3f1ea, roughness: 0.85, dithering: true }));
+function updateReferee(dt) {
+  const j = referee.job, rig = referee.rig;
+  if (!j) { if (rig) rig.root.visible = false; return; }
+  if (j.b.inPocket !== j.ip) { referee.job = null; if (rig) rig.root.visible = false; return; }   // taken back into play
+  if (!rig) { release(j); referee.job = null; return; }
+  const V = (x, y, z) => new THREE.Vector3(x, y, z), f = j.from, to = j.to;
+  const outF = V(f.x, 0, f.z).normalize(), outT = V(to.x, 0, to.z).normalize();
+  const high = 0.28, travel = Math.hypot(to.x - f.x, to.z - f.z);
+  // Waypoints (table space) and how long each leg takes; the ball is held from the 4th to the 7th
+  const pts = [V(f.x, 0.3, f.z).addScaledVector(outF, 0.35), V(f.x, f.y + 0.1, f.z), f.clone(), f.clone(), V(f.x, high, f.z),
+    V(to.x, high, to.z), V(to.x, 0.1, to.z), V(to.x, 0.1, to.z), V(to.x, 0.35, to.z).addScaledVector(outT, 0.3)];
+  const legs = [0.9, 0.35, 0.25, 0.6, 0.4 + travel / 0.9, 0.45, 0.35, 0.7];
+  j.t += dt;
+  let t = j.t, i = 0;
+  while (i < legs.length && t > legs[i]) { t -= legs[i]; i++; }
+  if (i >= legs.length) { referee.job = null; rig.root.visible = false; return; }
+  const u = t / legs[i], sm = u * u * (3 - 2 * u), at = pts[i].clone().lerp(pts[i + 1], sm);
+  const holding = i >= 3 && i <= 6;
+  if (i === 7 && !j.released) release(j, pts[7]);
+  rig.setPose(i >= 2 && i <= 6 ? 'cup' : 'open');
+  // Palm down, fingers pointing in towards the middle of the table
+  table.updateMatrixWorld();
+  const fwd = V(-at.x, 0, -at.z); if (fwd.lengthSq() < 1e-4) fwd.set(1, 0, 0);
+  fwd.normalize().applyQuaternion(table.quaternion);
+  rig.place(rig.F, rig.N, fwd, V(0, -1, 0).applyQuaternion(table.quaternion), table.localToWorld(at.clone()));
+  if (holding) j.b.mesh.position.copy(at);
+}
+function release(j, at = null) {
+  j.released = true;
+  const ip = j.ip, p = at || j.to.run.S.clone().setY(0.1).set(j.to.x, 0.1, j.to.z);
+  Object.assign(ip, { held: false, x: p.x, y: p.y, z: p.z, d: 0, v: 0 });
 }
 // Potted balls run from the pocket on to its runner and roll along to the end, or up to the ball already there.
 // When the referee takes one out to re-spot it, those behind it roll on to fill the gap.
@@ -1882,6 +1920,7 @@ function toRunner(b, p, y = -0.08) {
 const runnerTmp = new THREE.Vector3(), runnerAxis = new THREE.Vector3();
 function runnerStep(b, dt) {
   const ip = b.inPocket, run = ip.p && ip.p.run;
+  if (ip.held) return;                                     // in the referee's hand
   if (!run) { b.mesh.position.set(ip.x, ip.y, ip.z); return; }
   const ahead = balls.filter(o => o !== b && o.inPocket && o.inPocket.p === ip.p && o.inPocket.seq < ip.seq).length;
   const start = runnerTmp.set(ip.x, ip.y, ip.z), l1 = start.distanceTo(run.S) + (ip.carry ? 0.8 : 0);
@@ -4668,6 +4707,9 @@ class HandRig {
     if (kind === 'grip') {
       curl(78, 88, 40, [0, 0, 0, 0]);
       this.rot('thumb-metacarpal', tA, 40); this.rot('thumb-metacarpal', this.T, -40); this.rot('thumb-phalanx-proximal', tB, 40); this.rot('thumb-phalanx-distal', tB, 40);
+    } else if (kind === 'cup') {                          // round a ball, from above
+      curl(42, 40, 22, [-6, 0, 5, 10]);
+      this.rot('thumb-metacarpal', tA, 5); this.rot('thumb-metacarpal', this.T, -30); this.rot('thumb-phalanx-proximal', tB, 25);
     } else {
       curl(14, 12, 6, [-9, 0, 7, 15]);
       this.rot('thumb-metacarpal', tA, -68); this.rot('thumb-phalanx-proximal', tB, 8);
@@ -4680,6 +4722,11 @@ class HandRig {
       const c = new THREE.Vector3();
       for (const f of fingers) c.add(P(`${f}-finger-phalanx-proximal`)).add(P(`${f}-finger-phalanx-distal`)).add(P(`${f}-finger-phalanx-intermediate`));
       this.anchor.copy(c.multiplyScalar(1 / 12));
+    } else if (kind === 'cup' || kind === 'open') {
+      // the middle of the space the fingertips and thumb close round
+      const c = new THREE.Vector3();
+      for (const n of ['index-finger-tip', 'middle-finger-tip', 'ring-finger-tip', 'thumb-tip', 'middle-finger-metacarpal']) c.add(P(n));
+      this.anchor.copy(c.multiplyScalar(1 / 5));
     } else {
       this.anchor.copy(P('index-finger-phalanx-proximal')).addScaledVector(this.N, -0.026).addScaledVector(this.toPinky, -0.012);
     }
@@ -5122,6 +5169,7 @@ async function loadModels() {
       const buf = assetBuffer('asset-hand-' + side);
       if (buf) { opp.rigs[side] = new HandRig(await parseGLB(buf), side, oppSkin); }
     }
+    { const buf = assetBuffer('asset-hand-right'); if (buf) referee.rig = new HandRig(await parseGLB(buf), 'right', gloveMat); }
   } catch (e) { console.warn('Models could not be loaded', e); }
 }
 
@@ -5944,6 +5992,7 @@ function loop(time) {
   syncBallMeshes(dt);
   updateRestRack();
   tidyRunners();
+  updateReferee(dt);
   updateOpponent(dt);
   updateRoom(dt);
   netUpdate();
