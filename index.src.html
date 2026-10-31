@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 64;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 65;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -816,38 +816,40 @@ function buildTableMeshes() {
           pts.push([hx, Zb], [w, Zb]);
           pts = pts.map(([x, z]) => [x, z * p.sz]);
         }
-        return pts;
+        // (wound the same way round as the rail's outline, or a mirrored pocket's sides face inwards and vanish)
+        let area = 0;
+        for (let i = 0; i < pts.length; i++) { const [x1, z1] = pts[i], [x2, z2] = pts[(i + 1) % pts.length]; area += x1 * z2 - x2 * z1; }
+        return area < 0 ? pts.reverse() : pts;
       };
-      tableStatic.add(extrudeXZ(shape(0.004), [], railTop - 0.023, railTop + 0.003, leatherMat));     // the padded top
-      tableStatic.add(extrudeXZ(shape(0.0015), [], -0.077, railTop - 0.023, skirtMat));                // the skirt
+      // (the rail's rounded edges stand 5 mm proud of its outline, so the leather goes out past them)
+      tableStatic.add(extrudeXZ(shape(0.009), [], railTop - 0.023, railTop + 0.004, leatherMat));     // the padded top
+      tableStatic.add(extrudeXZ(shape(0.0065), [], -0.08, railTop - 0.023, skirtMat));                 // the skirt
     }
-    // The runner, outside the apron: short and fairly steep. The corner pockets' run along the side towards the
-    // middle; the middle pockets' towards the baulk end.
-    const zr = p.sz * (Za + R + 0.006), len = 0.34, y0 = -0.2;
-    const x0 = p.type === 'corner' ? p.sx * (L / 2 - 0.04) : -0.06, dirX = p.type === 'corner' ? -p.sx : -1;
-    const S = new THREE.Vector3(x0, y0, zr), E = new THREE.Vector3(x0 + dirX * len, y0 - 0.07, zr);
+    // The net hangs straight down from the hole, narrowing a little to the top of the runner below it. The runner
+    // then runs out from under the table and along the side: the corner pockets' towards the middle, the middle
+    // pockets' towards the baulk end.
+    const S = new THREE.Vector3(p.x, -0.2, p.z);
+    const E = p.type === 'corner' ? new THREE.Vector3(p.x - p.sx * 0.32, -0.27, p.sz * (Za + R + 0.012))
+                                  : new THREE.Vector3(-0.3, -0.27, p.sz * (W / 2 + 0.2));
     p.run = { S, E, len: S.distanceTo(E), dir: E.clone().sub(S).normalize() };
     p.restY = -1; p.netX = p.x; p.netZ = p.z;
-    // The net: a bag from the pocket's hole down and out to the top of the runner, which the ball drops through
     {
-      const topC = new THREE.Vector3(p.x, -0.075, p.z), botC = S.clone().add(new THREE.Vector3(0, R * 0.2, 0)).addScaledVector(p.run.dir, -0.01);
-      const h = topC.y - botC.y, g = new THREE.CylinderGeometry(p.r * 0.97, R * 1.35, h, 24, 6, true), pos = g.attributes.position;
-      for (let i = 0; i < pos.count; i++) {
-        const t = (h / 2 - pos.getY(i)) / h;                               // 0 at the top, 1 at the bottom
-        pos.setX(i, pos.getX(i) + (botC.x - topC.x) * t); pos.setZ(i, pos.getZ(i) + (botC.z - topC.z) * t);
-      }
-      g.computeVertexNormals();
-      const net = new THREE.Mesh(g, netMat); net.position.set(topC.x, (topC.y + botC.y) / 2, topC.z); tableStatic.add(net);
+      const topY = -0.075, botY = S.y + R * 0.4, h = topY - botY;
+      const net = new THREE.Mesh(new THREE.CylinderGeometry(p.r * 0.97, p.r * 0.75, h, 24, 6, true), netMat);
+      net.position.set(p.x, (topY + botY) / 2, p.z); tableStatic.add(net);
     }
+    // the pair of rails (either side of the line the balls take), the stop at the end, a hanger up to the pocket at
+    // the start and a bracket back to the apron at the end
+    const side = new THREE.Vector3(-p.run.dir.z, 0, p.run.dir.x).normalize();
     for (const k of [1, -1]) {
-      const off = new THREE.Vector3(0, -R * 0.62, k * R * 0.7);
+      const off = new THREE.Vector3(0, -R * 0.62, 0).addScaledVector(side, k * R * 0.7);
       rod(S.clone().add(off).addScaledVector(p.run.dir, -0.03), E.clone().add(off).addScaledVector(p.run.dir, 0.01));
+      rod(S.clone().add(off).addScaledVector(p.run.dir, -0.03), new THREE.Vector3(S.x, -0.075, S.z).addScaledVector(side, k * p.r * 0.75), 0.003);
     }
-    // the stop at the end, and brackets back to the apron
     rod(E.clone().add(new THREE.Vector3(0, -R * 0.7, 0)).addScaledVector(p.run.dir, R + 0.004), E.clone().add(new THREE.Vector3(0, R * 0.5, 0)).addScaledVector(p.run.dir, R + 0.004), 0.004);
-    for (const q of [S.clone().addScaledVector(p.run.dir, 0.06), E]) {
-      const hi = new THREE.Vector3(q.x, q.y + 0.03, p.sz * Za);
-      rod(q.clone().add(new THREE.Vector3(0, -R * 0.62, 0)), new THREE.Vector3(q.x, hi.y, zr), 0.003); rod(new THREE.Vector3(q.x, hi.y, zr), hi, 0.003);
+    {
+      const lo = E.clone().add(new THREE.Vector3(0, -R * 0.62, 0)), up = new THREE.Vector3(E.x, E.y + 0.04, E.z), wall = new THREE.Vector3(E.x, E.y + 0.04, p.sz * Za);
+      rod(lo, up, 0.003); rod(up, wall, 0.003);
     }
   }
 
@@ -887,7 +889,7 @@ function buildTableMeshes() {
 
   // Deep apron under the rails (with pocket holes so you can see into the nets), and turned legs
   // (cut back at the corners and the middle pockets, so the nets hang free outside it)
-  const ac = 0.26, mh = 0.1, mz = W / 2 - 0.03, AX = Xo - 0.03, AZ = Zo - 0.03;
+  const ac = 0.42, mh = 0.22, mz = W / 2 - 0.03, AX = Xo - 0.03, AZ = Zo - 0.03;
   const apron = [[-AX + ac, -AZ], [-mh, -AZ], [-mh, -mz], [mh, -mz], [mh, -AZ], [AX - ac, -AZ], [AX, -AZ + ac], [AX, AZ - ac], [AX - ac, AZ],
     [mh, AZ], [mh, mz], [-mh, mz], [-mh, AZ], [-AX + ac, AZ], [-AX, AZ - ac], [-AX, -AZ + ac]];
   const body = extrudeXZ(apron, [], -0.3, -0.075, darkWoodMat, 0.01);
@@ -4876,8 +4878,9 @@ function buildRestRack() {
   const hangEnd = (name, sx) => { const r = hang('rest', 1, -0.34, 0.8, sx); delete restRack.rest; restRack[name] = r; };
   const hang = (kind, sz, y, headAt, endX = 0) => {
     const r = makeRest(), len = REST_LEN[kind], head = r.heads[kind];
-    if (endX) r.g.rotation.y = Math.PI / 2 * endX;     // turned to run across the end, at x = ±(rail - apron)
+
     table.add(r.g); r.g.position.set(0, 0, 0); r.g.quaternion.identity(); r.g.visible = true;
+    if (endX) r.g.rotation.y = Math.PI / 2 * endX;     // turned to run across the end (and moved out to it, below)
     const z = sz * (AZ + 0.025), fwd = new THREE.Vector3(Math.sign(headAt), 0, 0);
     const end = new THREE.Vector3(headAt, y, z);                       // where the shaft meets the head
     r.shaft.position.copy(end); r.shaft.quaternion.setFromUnitVectors(UP, fwd.clone().negate());
