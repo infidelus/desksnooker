@@ -333,7 +333,7 @@ const roundName = r => ROUND_NAMES[ROUND_NAMES.length - champRounds() + r];
 // =====================================================================
 const DEFAULTS = {
   mode: 'practice', aim: true, pockets: 'standard', power: 1.3, bridge: 0.25,
-  hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, follow: 'aim', cueStyle: 'pro', rests: 'off', restCue: 'separate', height: 178, legs: true, sound: true, tableY: 0.76,
+  hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, follow: 'aim', cueStyle: 'pro', rests: 'off', restCue: 'separate', height: 178, watchOpponent: true, legs: true, sound: true, tableY: 0.76,
   opponent: 8, bestOf: 3, reds: 15, champLevel: 'amateur', champLength: 'short', champSize: 16,
   referee: 'male', coachVoice: 'male', hands: 'medium', figure: true, rules: 'pro',
 };
@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 74;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 75;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1885,9 +1885,9 @@ function runnerToTidy() {
   return null;
 }
 // (the computer waits for the referee to finish before playing)
-const refereeBusy = () => !!referee.job || !!runnerToTidy();
+const refereeBusy = () => !!referee.job || (!game.frameOver && !!runnerToTidy());
 function tidyRunners() {
-  if (anyMoving() || !pockets.length || referee.job) return;
+  if (anyMoving() || !pockets.length || referee.job || game.frameOver) return;   // (not after the last ball)
   if (balls.some(b => b.inPocket && b.inPocket.v > 0)) return;
   const job = runnerToTidy();
   if (job) {
@@ -3818,6 +3818,10 @@ const tableRows = [
   { label: 'Scoreboard', btns: [
     { t: () => 'Beyond the table', on: () => settings.board !== 'centre', act: () => { settings.board = 'far'; } },
     { t: () => 'Over the middle', on: () => settings.board === 'centre', act: () => { settings.board = 'centre'; } },
+  ] },
+  { label: 'Their shots', btns: [
+    { t: () => 'Watch them', on: () => settings.watchOpponent !== false, act: () => { settings.watchOpponent = true; } },
+    { t: () => 'Keep my view', on: () => settings.watchOpponent === false, act: () => { settings.watchOpponent = false; } },
   ] },
   { label: 'Your height', btns: [[168, "5ft 6"], [178, "5ft 10"], [183, "6ft"], [191, "6ft 3"]].map(([cm, t]) =>
     ({ t: () => t, on: () => (settings.height || 178) === cm, act: () => { settings.height = cm; } })) },
@@ -6004,6 +6008,21 @@ function updateDesktop(dt) {
     camera.position.lerp(want, Math.min(1, dt * 8));
     orbit.target.lerp(ball.clone().addScaledVector(d, 1.2), Math.min(1, dt * 8));
     camera.lookAt(orbit.target);
+  }
+  // The computer's (or an online opponent's) turn: the view swings round behind their cue to watch the shot, and
+  // stays there while the balls run
+  if (settings.watchOpponent !== false && (isAITurn() || isRemoteTurn()) && aiCue.visible && cueBall.onTable && !anyMoving()) {
+    table.updateMatrixWorld();
+    const ball = table.localToWorld(new THREE.Vector3(cueBall.x, R, cueBall.z));
+    const d = new THREE.Vector3(0, 1, 0).applyQuaternion(aiCue.quaternion); d.y = 0;
+    if (d.lengthSq() > 1e-4) {
+      d.normalize();
+      const want = ball.clone().addScaledVector(d, -1.15).add(new THREE.Vector3(0, 0.55, 0));
+      camera.position.lerp(want, Math.min(1, dt * 2.5));
+      orbit.target.lerp(ball.clone().addScaledVector(d, 0.9), Math.min(1, dt * 2.5));
+      desk.recentre = false;
+      if (desk.view === 'cue') camera.lookAt(orbit.target);
+    }
   }
   const shown = desk.charging ? desk.power * 7 : desk.setPower;
   document.getElementById('powerFill').style.width = `${Math.round(shown / 7 * 100)}%`;
