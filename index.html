@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 68;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 69;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -853,6 +853,21 @@ function buildTableMeshes() {
     }
   }
 
+  // A small brass maker's plate on the baulk end of the table
+  {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 80;
+    const g = c.getContext('2d'), grad = g.createLinearGradient(0, 0, 256, 80);
+    grad.addColorStop(0, '#9c7a34'); grad.addColorStop(0.5, '#e3c47a'); grad.addColorStop(1, '#9c7a34');
+    g.fillStyle = grad; g.fillRect(0, 0, 256, 80);
+    g.strokeStyle = 'rgba(60,40,10,0.7)'; g.lineWidth = 3; g.strokeRect(5, 5, 246, 70);
+    g.fillStyle = '#3b2a0c'; g.textAlign = 'center';
+    g.font = '700 24px Georgia, serif'; g.fillText('DESK SNOOKER', 128, 36);
+    g.font = 'italic 19px Georgia, serif'; g.fillText('made with Claude', 128, 62);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.031), new THREE.MeshStandardMaterial({ map: t, roughness: 0.35, metalness: 0.6, envMap: roomEnv }));
+    plate.rotation.y = -Math.PI / 2; plate.position.set(-(Xo - 0.03) - 0.0115, -0.15, 0); tableStatic.add(plate);
+  }
+
   // Cushions (nose follows the physics lines exactly)
   for (const sz of [-1, 1]) for (const hx of [-1, 1]) {
     tableStatic.add(new THREE.Mesh(cushionGeometry([hx * (L / 2 - d), sz * W / 2], [hx * m, sz * W / 2], [hx * (L / 2 - d + CUSH_W), sz * Zb], [hx * (m - 0.005), sz * Zb]), cushionMat));
@@ -1137,10 +1152,11 @@ const roomCanopy = makeCanopy(room);
     const d = cyl(0.13, 0.13, 0.012, M.silver, x0 + 0.06, y + 0.15, z, room, 32); d.rotation.z = Math.PI / 2;
     const c = cyl(0.07, 0.07, 0.014, M.gold, x0 + 0.055, y + 0.15, z, room, 24); c.rotation.z = Math.PI / 2;
   };
-  trophy('cup', M.gold, 0, 1.63, 1.5);
-  trophy('urn', M.silver, -0.7, 1.63, 1.0); trophy('urn', M.silver, 0.7, 1.63, 1.0);
+  // (each shelf has about 39 cm of room: a cup stands 32 cm at full size, handles and all, and an urn 40 cm)
+  trophy('cup', M.gold, 0, 1.63, 1.1);
+  trophy('urn', M.silver, -0.7, 1.63, 0.85); trophy('urn', M.silver, 0.7, 1.63, 0.85);
   plate(-0.4, 1.22); trophy('cup', M.silver, 0.1, 1.23, 1.0); plate(0.6, 1.22); trophy('cup', M.gold, -0.9, 1.23, 0.8);
-  trophy('urn', M.gold, -0.5, 0.83, 0.9); trophy('cup', M.gold, 0.25, 0.83, 1.1); trophy('cup', M.silver, 0.85, 0.83, 0.8); plate(-0.95, 0.82);
+  trophy('urn', M.gold, -0.5, 0.83, 0.85); trophy('cup', M.gold, 0.25, 0.83, 1.05); trophy('cup', M.silver, 0.85, 0.83, 0.8); plate(-0.95, 0.82);
   const cabGlow = lightPool(1.6, 1.0, 0xffd9a0, 0.3); cabGlow.rotation.x = -Math.PI / 2; cabGlow.position.set(wx - 0.9, 0.005, 0); room.add(cabGlow);
   // Framed pictures either side
   const picture = (z, draw) => {
@@ -3464,7 +3480,7 @@ const CUE_STYLES = {
   pro:  { label: 'Pro',  ash: '#cfa25e', grain: 0.32, points: 4, spliceTo: 0.62, sleeve: 0.24, butt: '#0d0806', veneers: ['#f1e2bf', '#140a05', '#b5492a'], joint: true, rTip: 0.0048, rMid: 0.0102, rButt: 0.0146 },
 };
 const cueTextures = {};
-const CUE_SIGNATURE = 'infidelus';                    // signed on the butt of your own pro cue
+const CUE_SIGNATURE = 'infidelus';                    // the maker's signature, on the butt of every pro cue
 function cueTexture(st, signed = false) {
   const key = st.label + (signed ? '+signed' : '');
   if (cueTextures[key]) return cueTextures[key];
@@ -3512,7 +3528,7 @@ function cueTexture(st, signed = false) {
   return (cueTextures[key] = t);
 }
 // Fill a cue group with the parts for a style; the tip is at the origin and the cue points along +y
-function buildCue(group, style, signed = group === cue) {
+function buildCue(group, style, signed = true) {
   const st = CUE_STYLES[style] || CUE_STYLES.pro;
   if (group.userData.style === style && group.userData.signed === signed) return;
   group.userData.style = style; group.userData.signed = signed;
@@ -3563,9 +3579,9 @@ function placeCueBehindBall(c, dirX, dirZ, gap, side, height, elev = 0) {
   const contact = new THREE.Vector3(cueBall.x + (-dirX * f - dirZ * side) * R, R + height * R, cueBall.z + (-dirZ * f + dirX * side) * R);
   c.position.copy(table.localToWorld(contact.addScaledVector(d3, -gap)));
   c.quaternion.setFromUnitVectors(UP, d3.applyQuaternion(table.quaternion));
-  if (c === cue) signatureUp(c);
+  signatureUp(c);
 }
-// Turn your cue on its own axis so the signature on its butt faces up, where you can read it
+// Turn a cue on its own axis so the signature on its butt faces up, where it can be read
 function signatureUp(c) {
   const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion), n = new THREE.Vector3(0, 0, -1).applyQuaternion(c.quaternion);
   const want = UP.clone().addScaledVector(axis, -UP.dot(axis));
