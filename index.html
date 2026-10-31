@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 69;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 70;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4147,7 +4147,9 @@ function followCueBall() {
   const turned = Math.atan2(-fwd.z, fwd.x) - yaw;
   const lx = Math.cos(turned), lz = -Math.sin(turned);
   let ax = cueBall.x, az = cueBall.z, ahead = 0.5;
-  if (restsOn() && reachNeed(balls, cueBall, lx, lz) !== 'none') {
+  const verdict = restsOn() ? reachNeed(balls, cueBall, lx, lz) : 'none';
+  tableGlide.verdict = { need: verdict, lx, lz, cx: cueBall.x, cz: cueBall.z };    // what the headset's rest goes by (below)
+  if (verdict !== 'none') {
     const back = edgeBehind(cueBall.x, cueBall.z, lx, lz);
     ax = cueBall.x - lx * back; az = cueBall.z - lz * back; ahead = 0.3;
   }
@@ -4201,7 +4203,7 @@ function moveTableWithSticks(dt) {
   const lx = axis(left, 2), ly = axis(left, 3);
   const [rx, ry] = rightStickAxes(dt);
   if (!lx && !ly && !rx && !ry) { if (heightDirty) { heightDirty = false; settings.tableY = table.position.y; saveSettings(); } return; }
-  tableGlide.t = -1;                                       // moving the table yourself stops the glide
+  tableGlide.t = -1; tableGlide.verdict = null;           // moving the table yourself stops the glide
   const { pos, fwd, right: rgt } = headPose();
   const sign = settings.stickFeel === 'table' ? 1 : -1;
   const speed = 1.1 * dt;
@@ -4443,11 +4445,19 @@ function updateHeadsetCue(dt, now) {
     const bridgePoint = !bridgeHand ? null : cueState.locked ? cueState.bridgePoint : gripPoint.clone().addScaledVector(dir, Math.max(0.05, Math.min(handAlong, offset - 0.05)));
     // Which rest (if any) this line needs; a double buzz in the bridge hand when you first need one
     table.updateMatrixWorld();
-    const dl = dir.clone().applyQuaternion(table.quaternion.clone().invert());
+    // The shot you're lining up, judged by where your cue hand is relative to the cue ball (steadier than the cue's own
+    // angle, which wanders while you handle the rest)
+    const handL = table.worldToLocal(back.clone()), dl = new THREE.Vector3(cueBall.x - handL.x, 0, cueBall.z - handL.z);
+    if (dl.lengthSq() < 1e-4) dl.copy(dir).applyQuaternion(table.quaternion.clone().invert());
     // It's put away while the balls run and while the table glides round to your next shot, and doesn't change
     // mid-stroke; otherwise a change only sticks once the shot has needed it for a moment, so it doesn't flicker
     const ready = canShoot() && !ballInHand && tableGlide.t < 0;
-    const want = !ready ? 'none' : cueState.locked ? cueState.need || 'none' : reachNeed(balls, cueBall, dl.x, dl.z);
+    // Where the table has glided you into place for a shot, any line close to that one goes by the same decision (you
+    // were put at the cushion for the rest, or brought up to the cue ball without it); a quite different line, or a
+    // table you've moved yourself, is judged on its own
+    const gv = tableGlide.verdict, fl = Math.hypot(dl.x, dl.z) || 1;
+    const sameShot = gv && Math.hypot(gv.cx - cueBall.x, gv.cz - cueBall.z) < 0.005 && (dl.x * gv.lx + dl.z * gv.lz) / fl > Math.cos(0.52);
+    const want = !ready ? 'none' : cueState.locked ? cueState.need || 'none' : sameShot ? gv.need : reachNeed(balls, cueBall, dl.x, dl.z);
     if (want === (cueState.need || 'none')) cueState.needT = 0;
     // (with the cue separate, a rest you've put down, or have your cue in, stays until the shot; one still in your
     // hand goes only after a second and a half, so it isn't snatched away while you move the cue about)
