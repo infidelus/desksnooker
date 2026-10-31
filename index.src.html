@@ -303,25 +303,25 @@ const AI_PLAYERS = [
   { name: 'Gary Pike',        title: 'Pub league player',         aim: 0.55,  speed: 0.16,  cands: 2, speeds: [1.3, 2.1],       spins: [0],                position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, breaksLeft: true, rating: 1080 },
   { name: 'Tracy Gill',       title: 'Pub team captain',          aim: 0.5,   speed: 0.15,  cands: 2, speeds: [1.3, 2.1],       spins: [0],                position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, rating: 1115 },
   { name: 'Shirley Brooks',   title: 'Club player',               aim: 0.45,  speed: 0.14,  cands: 3, speeds: [1.3, 2.1],       spins: [0, 0.35],          position: 0.0,   safety: 0.0,   attack: 0.0,   think: 0, rating: 1150 },
-  { name: 'Imran Qadir',      title: 'Club handicap winner',      aim: 0.415, speed: 0.135, cands: 3, speeds: [1.3, 2.1],       spins: [0, 0.35],          position: 0.15,  safety: 0.1,   attack: 0.05,  think: 0, rating: 1190 },
-  { name: 'Owen Thackeray',   title: 'Club captain',              aim: 0.38,  speed: 0.13,  cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.3,   safety: 0.2,   attack: 0.1,   think: 1, breaksLeft: true, rating: 1230 },
-  { name: 'Neil Furness',     title: 'League player',             aim: 0.35,  speed: 0.125, cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.4,   safety: 0.3,   attack: 0.15,  think: 1, rating: 1265 },
-  { name: 'Kev Dunmore',      title: 'League stalwart',           aim: 0.32,  speed: 0.12,  cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.5,   safety: 0.4,   attack: 0.2,   think: 1, rating: 1300 },
-  { name: 'Paddy Corrigan',   title: 'Club champion',             aim: 0.295, speed: 0.115, cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.55,  safety: 0.45,  attack: 0.21,  think: 1, rating: 1340 },
-  { name: 'Sanjay Bhalla',    title: 'Regional champion',         aim: 0.27,  speed: 0.11,  cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.6,   safety: 0.5,   attack: 0.22,  think: 1, rating: 1380 },
-  { name: 'Ffion Pryce',      title: "Women's tour player",       aim: 0.245, speed: 0.105, cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.65,  safety: 0.55,  attack: 0.235, think: 1, breaksLeft: true, rating: 1415 },
-  { name: 'Priya Lal',        title: 'County champion',           aim: 0.22,  speed: 0.1,   cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.7,   safety: 0.6,   attack: 0.25,  think: 1, rating: 1450 },
-  { name: 'Lewis Ambrose',    title: 'Junior international',      aim: 0.2,   speed: 0.095, cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.45, 0, 0.35],   position: 0.75,  safety: 0.65,  attack: 0.265, think: 1, rating: 1490 },
-  { name: 'Megan Tolley',     title: 'National amateur champion', aim: 0.18,  speed: 0.09,  cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 0.8,   safety: 0.7,   attack: 0.28,  think: 1, rating: 1530 },
-  { name: 'Tariq Haddad',     title: 'Amateur international',     aim: 0.165, speed: 0.085, cands: 4, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 0.825, safety: 0.725, attack: 0.29,  think: 1, rating: 1565 },
-  { name: 'Tommy Moran',      title: 'Semi-professional',         aim: 0.15,  speed: 0.08,  cands: 5, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 0.85,  safety: 0.75,  attack: 0.3,   think: 1, rating: 1600 },
-  { name: 'Callum Fraine',    title: 'Tour qualifier',            aim: 0.12,  speed: 0.07,  cands: 5, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 0.95,  safety: 0.85,  attack: 0.32,  think: 2, rating: 1680 },
-  { name: 'Lin Wei',          title: 'Touring professional',      aim: 0.1,   speed: 0.06,  cands: 5, speeds: [1.2, 1.9, 2.9],  spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 0.9,   attack: 0.34,  think: 2, rating: 1750 },
-  { name: 'Rhys Penhallow',   title: 'Top-32 professional',       aim: 0.085, speed: 0.055, cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 0.95,  attack: 0.35,  think: 2, breaksLeft: true, rating: 1820 },
-  { name: 'Alastair Grieve',  title: 'Ranking event winner',      aim: 0.07,  speed: 0.05,  cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.37,  think: 2, rating: 1900 },
-  { name: 'Josie Achterberg', title: 'Top-16 professional',       aim: 0.057, speed: 0.045, cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.38,  think: 2, rating: 1970 },
-  { name: 'Marcus Vale',      title: 'World champion',            aim: 0.045, speed: 0.04,  cands: 6, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.4,   think: 2, rating: 2050 },
-  { name: 'Declan Royle',     title: 'Snooker legend',            aim: 0.036, speed: 0.035, cands: 7, speeds: [1.15, 1.8, 2.8], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.42,  think: 2, breaksLeft: true, rating: 2120 },
+  { name: 'Imran Qadir',      title: 'Club handicap winner',      aim: 0.332, speed: 0.088, cands: 3, speeds: [1.3, 2.1],       spins: [0, 0.35],          position: 0.3,  safety: 0.1,   attack: 0.135,  think: 0, rating: 1190 },
+  { name: 'Owen Thackeray',   title: 'Club captain',              aim: 0.304,  speed: 0.085,  cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.45,   safety: 0.2,   attack: 0.22,   think: 1, breaksLeft: true, rating: 1230 },
+  { name: 'Neil Furness',     title: 'League player',             aim: 0.28,  speed: 0.081, cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.55,   safety: 0.3,   attack: 0.305,  think: 1, rating: 1265 },
+  { name: 'Kev Dunmore',      title: 'League stalwart',           aim: 0.256,  speed: 0.078,  cands: 3, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.65,   safety: 0.4,   attack: 0.39,   think: 1, rating: 1300 },
+  { name: 'Paddy Corrigan',   title: 'Club champion',             aim: 0.236, speed: 0.075, cands: 4, speeds: [1.3, 2.1],       spins: [-0.45, 0, 0.35],   position: 0.7,  safety: 0.45,  attack: 0.407,  think: 1, rating: 1340 },
+  { name: 'Sanjay Bhalla',    title: 'Regional champion',         aim: 0.19, speed: 0.06, cands: 5, speeds: [1.1, 1.45, 1.9, 2.5, 3.2], spins: [-0.45, 0, 0.35],   position: 0.75,   safety: 0.5,   attack: 0.424,  think: 2, rating: 1380 },
+  { name: 'Ffion Pryce',      title: "Women's tour player",       aim: 0.15, speed: 0.05, cands: 5, speeds: [1.1, 1.45, 1.9, 2.5, 3.2], spins: [-0.45, 0, 0.35],   position: 0.8,  safety: 0.55,  attack: 0.449, think: 2, breaksLeft: true, rating: 1415 },
+  { name: 'Priya Lal',        title: 'County champion',           aim: 0.14, speed: 0.048, cands: 5, speeds: [1.1, 1.45, 1.9, 2.5, 3.2], spins: [-0.45, 0, 0.35],   position: 0.85,   safety: 0.6,   attack: 0.475,  think: 2, rating: 1450 },
+  { name: 'Lewis Ambrose',    title: 'Junior international',      aim: 0.13, speed: 0.046, cands: 5, speeds: [1.1, 1.45, 1.9, 2.5, 3.2], spins: [-0.45, 0, 0.35],   position: 0.9,  safety: 0.65,  attack: 0.501, think: 2, rating: 1490 },
+  { name: 'Megan Tolley',     title: 'National amateur champion', aim: 0.12, speed: 0.044, cands: 5, speeds: [1.1, 1.45, 1.9, 2.5, 3.2], spins: [-0.55, -0.2, 0.4], position: 0.95,   safety: 0.7,   attack: 0.526,  think: 2, rating: 1530 },
+  { name: 'Tariq Haddad',     title: 'Amateur international',     aim: 0.11, speed: 0.042, cands: 5, speeds: [1.1, 1.45, 1.9, 2.5, 3.2], spins: [-0.55, -0.2, 0.4], position: 0.975, safety: 0.725, attack: 0.543,  think: 2, rating: 1565 },
+  { name: 'Tommy Moran',      title: 'Semi-professional',         aim: 0.1, speed: 0.04, cands: 5, speeds: [1.1, 1.45, 1.9, 2.5, 3.2], spins: [-0.55, -0.2, 0.4], position: 1.0,  safety: 0.75,  attack: 0.56,   think: 2, rating: 1600 },
+  { name: 'Callum Fraine',    title: 'Tour qualifier',            aim: 0.09, speed: 0.038, cands: 5, speeds: [1.1, 1.45, 1.9, 2.5, 3.2], spins: [-0.55, -0.2, 0.4], position: 1.0,  safety: 0.85,  attack: 0.594,  think: 2, rating: 1680 },
+  { name: 'Lin Wei',          title: 'Touring professional',      aim: 0.08,   speed: 0.039,  cands: 5, speeds: [1.1, 1.45, 1.9, 2.5, 3.2], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 0.9,   attack: 0.62,  think: 2, rating: 1750 },
+  { name: 'Rhys Penhallow',   title: 'Top-32 professional',       aim: 0.068, speed: 0.036, cands: 6, speeds: [1.08, 1.4, 1.8, 2.4, 3.1], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 0.95,  attack: 0.62,  think: 2, breaksLeft: true, rating: 1820 },
+  { name: 'Alastair Grieve',  title: 'Ranking event winner',      aim: 0.056,  speed: 0.033,  cands: 6, speeds: [1.08, 1.4, 1.8, 2.4, 3.1], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.62,  think: 2, rating: 1900 },
+  { name: 'Josie Achterberg', title: 'Top-16 professional',       aim: 0.046, speed: 0.029, cands: 6, speeds: [1.08, 1.4, 1.8, 2.4, 3.1], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.62,  think: 2, rating: 1970 },
+  { name: 'Marcus Vale',      title: 'World champion',            aim: 0.036, speed: 0.026,  cands: 6, speeds: [1.08, 1.4, 1.8, 2.4, 3.1], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.62,   think: 2, rating: 2050 },
+  { name: 'Declan Royle',     title: 'Snooker legend',            aim: 0.029, speed: 0.023, cands: 7, speeds: [1.08, 1.4, 1.8, 2.4, 3.1], spins: [-0.55, -0.2, 0.4], position: 1.0,   safety: 1.0,   attack: 0.62,  think: 2, breaksLeft: true, rating: 2120 },
 ];
 const ROUND_NAMES = ['Last 16', 'Quarter-final', 'Semi-final', 'Final'];
 // A championship of 8 has three rounds and one of 16 has four; rounds are named counting back from the final
@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 73;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 74;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3213,7 +3213,7 @@ function* aiThink(profile) {
       .sort((i, j) => Math.hypot(base[i].x - cue.x, base[i].z - cue.z) - Math.hypot(base[j].x - cue.x, base[j].z - cue.z))
       .slice(0, profile.safety >= 0.9 ? 5 : 4);
     const offsets = profile.safety >= 0.9 ? [-0.9, -0.65, -0.35, 0, 0.35, 0.65, 0.9] : [-0.85, -0.5, 0, 0.5, 0.85];
-    const speeds = profile.safety >= 0.75 ? [0.9, 1.6, 2.6] : [1.0, 2.0];
+    const speeds = profile.safety >= 0.75 ? [0.8, 1.3, 1.9, 2.6, 3.4] : profile.safety >= 0.5 ? [0.9, 1.5, 2.2, 3.0] : [1.0, 2.0];
     for (const ti of targets) {
       const t = base[ti];
       const dx = t.x - cue.x, dz = t.z - cue.z, d = Math.hypot(dx, dz);
@@ -3427,7 +3427,8 @@ function updateAI(dt) {
     const c = Math.cos(err), s = Math.sin(err);
     const dx = p.dirX * c - p.dirZ * s, dz = p.dirX * s + p.dirZ * c;
     const speed = Math.max(0.3, p.speed * (1 + gauss() * profile.speed));
-    const side = p.side + gauss() * 0.03, height = p.height + gauss() * 0.04;
+    // (how exactly the tip finds the spot it was meant for: the better the player, the more exactly)
+    const side = p.side + gauss() * (0.006 + profile.aim * 0.1), height = p.height + gauss() * (0.008 + profile.aim * 0.13);
     ai.lastShot = { x: cueBall.x, z: cueBall.z, a: Math.atan2(p.dirZ, p.dirX) };
     // With a colour on, the computer nominates the one it's playing (only said aloud when it's snookered)
     if (game.ballOn === 'colour' && !game.nominated) {
