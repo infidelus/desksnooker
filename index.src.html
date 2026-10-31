@@ -191,7 +191,7 @@
     <h2>Quest controls</h2>
     <dl>
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
-      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand holds it and it points where your hand points, coming out raised (hold the grip button to slide your hand along it). Tip your wrist down to set its head on the cloth behind the cue ball, then bring your cue to the top of the head: it settles in with a buzz and you can cue (point well away to take it out). With Headset rest set to Cue in rest, the cue is always lined up through the head instead. Once down, swing the butt left or right to turn the rest about its head, tilt your wrist up slightly to lift the head a touch, or further to lift it clear. Rests are a fixed length: pull back past the end and the head is dragged with you. For a rest shot the table glides round to put you at the cushion. Your cue hand plays the shot. When you need one depends on your height (Settings): at 6 ft you'll bridge by hand, leaning over from behind the cushion, until the cue ball is about 5 ft from that cushion. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
+      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand holds it and it points where your hand points, coming out raised (hold the grip button to slide your hand along it, raised or down). Tip your wrist down to set its head on the cloth behind the cue ball, then bring your cue to the top of the head: it settles in with a buzz and you can cue (point well away to take it out). With Headset rest set to Cue in rest, the cue is always lined up through the head instead. Once down, move your hand forwards or back to slide the rest along the cloth, swing the butt left or right to turn the rest about its head, tilt your wrist up slightly to lift the head a touch, or further to lift it clear. Rests are a fixed length: pull back past the end and the head is dragged with you. For a rest shot the table glides round to put you at the cushion. Your cue hand plays the shot. When you need one depends on your height (Settings): at 6 ft you'll bridge by hand, leaning over from behind the cushion, until the cue ball is about 5 ft from that cushion. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
       <dt>Trigger + left stick</dt><dd>While the cue is locked, push left or right to fine-tune the aim (a gentle push for the smallest changes; a tick every 0.1°)</dd>
       <dt>Left stick</dt><dd>Slide the table around</dd>
       <dt>Right stick</dt><dd>Left/right rotates the table round you</dd>
@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 71;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 72;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4324,8 +4324,15 @@ function updateHeadsetCue(dt, now) {
         // Once it's down it stays still: the small movements your hands and wrist make as you cue are ignored. The
         // butt only follows your hand once it's moved more than a few centimetres, and the wrist tilt is steadied.
         if (!rs.hold) rs.hold = h.clone();
-        const off = h.distanceTo(rs.hold);
+        const before = rs.hold.clone(), off = h.distanceTo(rs.hold);
         if (off > 0.04) rs.hold.lerp(h, (off - 0.04) / off);
+        // Moving your hand forwards or back along the shaft slides the whole rest along the cloth with it (side to
+        // side still swings the butt round the head); holding the grip button, your hand slides along the shaft instead
+        if (!btn(bridgeHand, 1)) {
+          const ux = rs.head.x - before.x, uz = rs.head.z - before.z, un = Math.hypot(ux, uz) || 1;
+          const a = ((rs.hold.x - before.x) * ux + (rs.hold.z - before.z) * uz) / un;
+          rs.head.x += ux / un * a; rs.head.z += uz / un * a;
+        }
         const above = tip.y - Math.max(0, g);
         rs.above = rs.above === undefined ? above : rs.above + (above - rs.above) * Math.min(1, dt * 5);
         if (rs.above > 0.12) {                                          // lifted clear, as your wrist tips it up
