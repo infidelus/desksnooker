@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 66;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 67;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1856,21 +1856,30 @@ function updateFall(b, dt) {
 
 // When a runner is nearly full, the referee moves the ball at its end across to the emptiest one, so a pocket
 // never blocks up. One at a time, once the balls on the table and on the runners have all stopped.
-function tidyRunners() {
-  if (anyMoving() || !pockets.length || referee.job) return;
+// The runner the referee needs to clear next, and where to, if any
+function runnerToTidy() {
   const on = p => balls.filter(b => b.inPocket && b.inPocket.p === p);
-  if (balls.some(b => b.inPocket && b.inPocket.v > 0)) return;
   for (const p of pockets) {
     if (!p.run) continue;
     const room = Math.floor((p.run.len - 0.004) / (2.03 * R)), here = on(p);
     if (here.length < room - 1) continue;
     const to = pockets.filter(q => q !== p && q.run).sort((a, c) => on(a).length - on(c).length)[0];
-    if (!to || on(to).length >= room - 2) continue;
+    if (to && on(to).length < room - 2) return { here, to };
+  }
+  return null;
+}
+// (the computer waits for the referee to finish before playing)
+const refereeBusy = () => !!referee.job || !!runnerToTidy();
+function tidyRunners() {
+  if (anyMoving() || !pockets.length || referee.job) return;
+  if (balls.some(b => b.inPocket && b.inPocket.v > 0)) return;
+  const job = runnerToTidy();
+  if (job) {
+    const { here, to } = job;
     const b = here.sort((a, c) => a.inPocket.seq - c.inPocket.seq)[0], from = b.mesh.position;
     // (it now belongs to the other runner, so those behind it roll on; the referee's hand takes it there)
     b.inPocket = { p: to, seq: runnerSeq++, x: from.x, y: from.y, z: from.z, d: 0, v: 0, held: true };
     referee.job = { b, ip: b.inPocket, from: from.clone(), to, t: 0 };
-    return;
   }
 }
 // The referee's white-gloved hand: it reaches down to the ball, takes it, lifts it over the table and round to the
@@ -3350,6 +3359,7 @@ function updateAI(dt) {
     opp.hold = null; aiCue.visible = false; opp.bridgeTip = null;
   }
   if (!isAITurn() || anyMoving() || shot || choice) { if (!isAITurn()) aiCue.visible = false; return; }
+  if (refereeBusy()) return;                              // wait until the referee has finished at the runners
   const profile = AI_PLAYERS[game.players[game.current].ai];
   if (!ai.gen && !ai.plan) {
     // Concede when it can't win without snookers
@@ -6286,7 +6296,7 @@ function settleNow() {
 window.snooker = { reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
-  hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn,
+  hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy,
   opp, handRigs, updateHands, cue, get choice() { return choice; }, chooseOption, snookeredOnAll, get champ() { return champ; }, newChampionship, frameWon, concedeFrame, menuCanvas: menu.c, boardCanvas: board.c, drawMenu, setMenuPage: p => { menuPage = p; drawMenu(); }, AI_PLAYERS, R, L, W,
 };
 </script>
