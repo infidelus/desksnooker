@@ -6,7 +6,7 @@
 <title>Desk Snooker</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Atkinson+Hyperlegible:wght@400;700&family=Great+Vibes&display=swap">
 <style>
   /* Layout: full-screen 3D table behind one slate panel pinned to the left, like a scoreboard on the hall wall. */
   :root {
@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 67;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 68;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3464,8 +3464,10 @@ const CUE_STYLES = {
   pro:  { label: 'Pro',  ash: '#cfa25e', grain: 0.32, points: 4, spliceTo: 0.62, sleeve: 0.24, butt: '#0d0806', veneers: ['#f1e2bf', '#140a05', '#b5492a'], joint: true, rTip: 0.0048, rMid: 0.0102, rButt: 0.0146 },
 };
 const cueTextures = {};
-function cueTexture(st) {
-  if (cueTextures[st.label]) return cueTextures[st.label];
+const CUE_SIGNATURE = 'infidelus';                    // signed on the butt of your own pro cue
+function cueTexture(st, signed = false) {
+  const key = st.label + (signed ? '+signed' : '');
+  if (cueTextures[key]) return cueTextures[key];
   const W = 128, H = 2048, c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d'), px = m => (m / CUE_LEN) * H;       // canvas row 0 is the end of the butt
   let seed = st.label.length * 977; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -3493,14 +3495,27 @@ function cueTexture(st) {
   g.fillStyle = st.butt; g.fillRect(0, 0, W, sleeve);
   for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(255,255,255,${0.015 + r() * 0.03})`; g.fillRect(r() * W, r() * sleeve, 1 + r() * 2, 40 + r() * 200); }
   if (st.veneers.length) { g.fillStyle = st.veneers[0]; g.fillRect(0, sleeve - 3, W, 3); }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.flipY = false; t.anisotropy = 4;
-  return (cueTextures[st.label] = t);
+  // The signature: gold italic script along the sleeve, reading from the butt towards the tip
+  if (signed) {
+    g.save();
+    g.translate(W * 0.5, sleeve * 0.52); g.rotate(-Math.PI / 2); g.scale(1, -1);  // (the texture wraps the other way round)
+    g.font = '44px "Great Vibes", "Snell Roundhand", "Segoe Script", "Brush Script MT", cursive';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.shadowColor = 'rgba(0,0,0,0.6)'; g.shadowBlur = 2;
+    const grad = g.createLinearGradient(-sleeve * 0.4, 0, sleeve * 0.4, 0);
+    grad.addColorStop(0, '#b8862f'); grad.addColorStop(0.5, '#f1d48a'); grad.addColorStop(1, '#b8862f');
+    g.fillStyle = grad;
+    g.fillText(CUE_SIGNATURE, 0, 0, sleeve * 0.82);
+    g.restore();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.flipY = false; t.anisotropy = 8;
+  return (cueTextures[key] = t);
 }
 // Fill a cue group with the parts for a style; the tip is at the origin and the cue points along +y
-function buildCue(group, style) {
+function buildCue(group, style, signed = group === cue) {
   const st = CUE_STYLES[style] || CUE_STYLES.pro;
-  if (group.userData.style === style) return;
-  group.userData.style = style;
+  if (group.userData.style === style && group.userData.signed === signed) return;
+  group.userData.style = style; group.userData.signed = signed;
   while (group.children.length) { const o = group.children.pop(); o.geometry.dispose(); }
   const TIP = st.rTip, DOME = 0.009, cap = Math.asin(TIP / DOME), capH = DOME * (1 - Math.cos(cap));
   const chalk = new THREE.MeshStandardMaterial({ color: 0x3f7fb5, roughness: 0.9, dithering: true });
@@ -3521,7 +3536,7 @@ function buildCue(group, style) {
   }
   prof.reverse();                                                                    // butt first, so the faces point outwards
   const lathe = new THREE.LatheGeometry(prof, 24);
-  group.add(new THREE.Mesh(lathe, new THREE.MeshStandardMaterial({ map: cueTexture(st), roughness: 0.32, dithering: true })));
+  group.add(new THREE.Mesh(lathe, new THREE.MeshStandardMaterial({ map: cueTexture(st, signed && style === 'pro'), roughness: 0.32, dithering: true })));
   // a three-quarter joint, 37 cm up from the butt
   if (st.joint) { const jy = top - (CUE_LEN - 0.37); const jr = st.rMid + (st.rButt - st.rMid) * ((CUE_LEN - 0.37 - 0.95) / (CUE_LEN - 0.95)) + 0.0004, j = new THREE.CylinderGeometry(jr, jr, 0.012, 20); j.translate(0, jy, 0); group.add(new THREE.Mesh(j, metal(0xc9a24a))); }
   const capG = new THREE.CylinderGeometry(st.rButt, st.rButt - 0.001, 0.012, 20); capG.translate(0, top - CUE_LEN - 0.006, 0);
@@ -3548,6 +3563,15 @@ function placeCueBehindBall(c, dirX, dirZ, gap, side, height, elev = 0) {
   const contact = new THREE.Vector3(cueBall.x + (-dirX * f - dirZ * side) * R, R + height * R, cueBall.z + (-dirZ * f + dirX * side) * R);
   c.position.copy(table.localToWorld(contact.addScaledVector(d3, -gap)));
   c.quaternion.setFromUnitVectors(UP, d3.applyQuaternion(table.quaternion));
+  if (c === cue) signatureUp(c);
+}
+// Turn your cue on its own axis so the signature on its butt faces up, where you can read it
+function signatureUp(c) {
+  const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion), n = new THREE.Vector3(0, 0, -1).applyQuaternion(c.quaternion);
+  const want = UP.clone().addScaledVector(axis, -UP.dot(axis));
+  if (want.lengthSq() < 1e-6) return;
+  want.normalize();
+  c.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, Math.atan2(n.clone().cross(want).dot(axis), n.dot(want))));
 }
 
 const aimMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 });
@@ -4395,7 +4419,7 @@ function updateHeadsetCue(dt, now) {
   }
   cue.visible = true;
   cue.position.copy(tipWorld);
-  cue.quaternion.setFromUnitVectors(UP, dir);
+  cue.quaternion.setFromUnitVectors(UP, dir); signatureUp(cue);
   {
     const offset = cueState.locked ? cueState.offset : free.offset;
     const gripPoint = tipWorld.clone().addScaledVector(dir, -offset);
@@ -6047,6 +6071,11 @@ renderDraw();
 drawSpinBall();
 checkXR();
 document.fonts?.ready.then(() => { refreshBoard(); drawMenu(); });
+// The signature on your cue is drawn in a script font from Google Fonts: draw it again once that has loaded
+document.fonts?.load('44px "Great Vibes"').then(() => {
+  for (const k of Object.keys(cueTextures)) if (k.endsWith('+signed')) delete cueTextures[k];
+  cue.userData.style = null; buildCue(cue, settings.cueStyle || 'pro');
+}).catch(() => {});
 renderer.setAnimationLoop(loop);
 loadModels();
 
