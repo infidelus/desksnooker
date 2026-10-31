@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 72;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 73;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3574,7 +3574,15 @@ const UP = new THREE.Vector3(0, 1, 0);
 function placeCueBehindBall(c, dirX, dirZ, gap, side, height, elev = 0) {
   ({ side, height, elev } = playableShot(balls, cueBall, dirX, dirZ, side, height, elev));
   table.updateMatrixWorld();
-  const e = Math.max(elev, 0.08), f = Math.sqrt(Math.max(0, 1 - side * side - height * height));
+  // On a rest, the cue lies in the rest's head, which stays on the cloth a fixed distance behind the ball (just behind
+  // the tip as it's settled): striking higher or lower on the cue ball drops or raises the butt, pivoting on the rest
+  const restKind = restsOn() && (c === cue || c === aiCue) ? reachNeed(balls, cueBall, dirX, dirZ) : 'none';
+  let e = Math.max(elev, 0.08);
+  if (restKind !== 'none') {
+    const back = (c === aiCue ? 0.03 : 0.01) + BRIDGE_BACK;
+    e = Math.max(elev, Math.atan2(REST_INFO[restKind].head + 0.006 - (R + height * R), back));
+  }
+  const f = Math.sqrt(Math.max(0, 1 - side * side - height * height));
   const d3 = new THREE.Vector3(dirX * Math.cos(e), -Math.sin(e), dirZ * Math.cos(e));
   const contact = new THREE.Vector3(cueBall.x + (-dirX * f - dirZ * side) * R, R + height * R, cueBall.z + (-dirZ * f + dirX * side) * R);
   c.position.copy(table.localToWorld(contact.addScaledVector(d3, -gap)));
@@ -5976,12 +5984,11 @@ function updateDesktop(dt) {
   const plKey = pl && pl.raised ? `${pl.height.toFixed(2)}|${Math.round(pl.elev * 180 / Math.PI)}` : '';
   if (plKey !== desk.playKey) { desk.playKey = plKey; desk.play = pl && pl.raised ? pl : null; drawSpinBall(); }
   cue.visible = show;
-  // The rest (if this shot needs one) under the cue, its shaft off to your bridge-hand side. The spider and the swan
-  // (and the rest's cross) hold the cue up off the cloth, so it's shown sloping down to the ball over them.
+  // The rest (if this shot needs one) under the cue, its shaft off to your bridge-hand side. It stands a fixed distance
+  // behind the ball; the cue lies in its head (pivoting there as you choose where to strike) and draws back through it
+  // as you build up power.
   desk.need = show && !ballInHand ? reachNeed(balls, cueBall, ax, az) : 'none';
-  // The rest stands a fixed distance behind the ball; the cue draws back through it as you build up power
-  const restElev = desk.need !== 'none' ? Math.atan2(REST_INFO[desk.need].head - R + 0.006, BRIDGE_BACK + 0.01) : 0;
-  if (show) placeCueBehindBall(cue, ax, az, 0.01 + desk.power * 0.25, desk.tipX * 0.5, desk.tipY * 0.5, Math.max(desk.elev * Math.PI / 180, restElev));
+  if (show) placeCueBehindBall(cue, ax, az, 0.01 + desk.power * 0.25, desk.tipX * 0.5, desk.tipY * 0.5, desk.elev * Math.PI / 180);
   if (desk.need !== 'none') {
     const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(cue.quaternion);
     placeRest(playerRest, desk.need, cue.position.clone().addScaledVector(cdir, -(BRIDGE_BACK - desk.power * 0.25)), cdir, settings.hand === 'right' ? 'left' : 'right');
