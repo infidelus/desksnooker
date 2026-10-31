@@ -191,7 +191,7 @@
     <h2>Quest controls</h2>
     <dl>
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
-      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand holds it and it points where your hand points, coming out raised (hold the grip button to slide your hand along it). Tip your wrist down to set its head on the cloth behind the cue ball, then bring your cue to the top of the head: it settles in with a buzz and you can cue (point well away to take it out). With Headset rest set to Cue in rest, the cue is always lined up through the head instead. Once down, swing the butt left or right to turn the rest about its head, tilt your wrist up slightly to lift the head a touch, or further to lift it clear. Rests are a fixed length: pull back past the end and the head is dragged with you. For a rest shot the table glides round to put you at the cushion. Your cue hand plays the shot. When you need one depends on your height (Settings): at 6 ft you'll bridge by hand until the cue ball is about 5 ft past the baulk line (from the cushion behind you). Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
+      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand holds it and it points where your hand points, coming out raised (hold the grip button to slide your hand along it). Tip your wrist down to set its head on the cloth behind the cue ball, then bring your cue to the top of the head: it settles in with a buzz and you can cue (point well away to take it out). With Headset rest set to Cue in rest, the cue is always lined up through the head instead. Once down, swing the butt left or right to turn the rest about its head, tilt your wrist up slightly to lift the head a touch, or further to lift it clear. Rests are a fixed length: pull back past the end and the head is dragged with you. For a rest shot the table glides round to put you at the cushion. Your cue hand plays the shot. When you need one depends on your height (Settings): at 6 ft you'll bridge by hand, leaning over from behind the cushion, until the cue ball is about 5 ft from that cushion. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
       <dt>Trigger + left stick</dt><dd>While the cue is locked, push left or right to fine-tune the aim (a gentle push for the smallest changes; a tick every 0.1°)</dd>
       <dt>Left stick</dt><dd>Slide the table around</dd>
       <dt>Right stick</dt><dd>Left/right rotates the table round you</dd>
@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 70;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 71;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4853,12 +4853,12 @@ function updateHands(show, tip, dir, gripPoint, bridgePoint, restHold = null) {
 // =====================================================================
 const BRIDGE_BACK = 0.28;
 // How far a player can reach, measured from the outside edge of the table back along the shot, for a player of
-// this height (cm): with the bridge hand on the cloth (a 6 ft player, stretching, bridges by hand until the cue ball
-// is about 5 ft past the baulk line); then the rest; then the rest with an extension when the cue hand would be
-// too far over; and the long rest with an extended cue near the far cushion.
+// this height (cm). Standing behind the cushion and leaning over, a 6 ft player bridges by hand with the cue ball up
+// to about 5 ft from the cushion; beyond that, the rest. Past the middle pockets the cue hand would be too far over the
+// table, so the rest and an extension; and beyond about the pink spot, the long rest with an extended cue.
 function reaches(h) {
-  const bridge = 2.14 + (h - 183) * 0.012;
-  return { bridge, cue: bridge + 0.85, ext: bridge + 1.2 };
+  const bridge = 1.4 * h / 183;
+  return { bridge, cue: bridge + 0.78, ext: bridge + 1.3 };
 }
 // The height of whoever is at the table: you, or the computer player whose turn it is (each has their own)
 function shooterHeight() {
