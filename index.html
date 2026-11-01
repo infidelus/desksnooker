@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 77;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 80;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2493,7 +2493,7 @@ function continueAfterFrame(fromNet = false) {
 //  triangle of fifteen reds.
 // =====================================================================
 const COIN_R = 0.0142, COIN_T = 0.0025;
-const COIN_HEADS = 'declan';                            // whose head is on the coin: 'declan' or 'referee'
+const COIN_HEADS = 'referee';                           // whose head is on the coin: 'referee' or 'declan'
 function coinFace(heads, who = COIN_HEADS) {
   const c = document.createElement('canvas'); c.width = c.height = 512;
   const g = c.getContext('2d'), C = 256, ring = 250, inner = 178;
@@ -2516,6 +2516,20 @@ function coinFace(heads, who = COIN_HEADS) {
     }
     g.restore();
   };
+  // ...and along the bottom, reading left to right the right way up
+  const ringTextBottom = (text, size = 26) => {
+    g.save(); g.font = `700 ${size}px Georgia, serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const r = (ring + inner) / 2 + 2, total = [...text].reduce((t, ch) => t + g.measureText(ch).width, 0) + text.length * 2.5;
+    let a = Math.PI / 2 + total / r / 2;
+    for (const ch of text) {
+      const w = g.measureText(ch).width + 2.5; a -= w / 2 / r;
+      g.save(); g.translate(C + Math.cos(a) * r, C + Math.sin(a) * r); g.rotate(a - Math.PI / 2);
+      g.fillStyle = 'rgba(255,240,190,0.7)'; g.fillText(ch, -1, -1); g.fillStyle = '#6e5216'; g.fillText(ch, 0, 0);
+      g.restore(); a -= w / 2 / r;
+    }
+    g.restore();
+  };
+  const shade = (x0, y0, x1, y1, a, b) => { const gr = g.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, a); gr.addColorStop(1, b); return gr; };
   // Relief: a shape drawn lighter, with a dark edge below-right and a bright one above-left
   const relief = (path, fill = '#e4e7ea') => {
     g.save(); g.translate(2.5, 2.5); g.fillStyle = 'rgba(40,42,46,0.55)'; path(); g.fill(); g.restore();
@@ -2524,33 +2538,64 @@ function coinFace(heads, who = COIN_HEADS) {
   };
   if (heads && who === 'referee') {
     ringText('THE REFEREE · QUIET PLEASE', -Math.PI / 2);
-    // A referee in profile, facing left: neat parted hair, bow tie and wing collar, and a white-gloved hand holding up
-    // a ball to be cleaned
-    const head = () => { g.beginPath();
-      g.moveTo(312, 396); g.bezierCurveTo(310, 366, 306, 342, 314, 318);
-      g.bezierCurveTo(342, 284, 344, 204, 314, 166); g.bezierCurveTo(290, 134, 236, 124, 204, 138);
-      g.bezierCurveTo(184, 148, 176, 168, 182, 188); g.lineTo(186, 204);
-      g.lineTo(180, 220); g.bezierCurveTo(170, 236, 160, 246, 164, 254); g.lineTo(180, 260);
-      g.lineTo(176, 274); g.lineTo(184, 282); g.lineTo(178, 292);
-      g.bezierCurveTo(174, 306, 184, 322, 202, 326); g.bezierCurveTo(222, 330, 236, 328, 246, 324);
-      g.bezierCurveTo(244, 350, 242, 372, 238, 396); g.closePath(); };
-    relief(head);
-    g.save(); g.strokeStyle = 'rgba(70,74,80,0.75)'; g.lineWidth = 3; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(196, 150); g.bezierCurveTo(240, 130, 300, 150, 326, 196); g.stroke();             // the parting
-    for (let i = 1; i < 5; i++) { g.beginPath(); g.moveTo(198 + i * 4, 152 + i * 8); g.bezierCurveTo(244, 140 + i * 9, 296, 162 + i * 10, 324, 204 + i * 12); g.stroke(); }
-    g.beginPath(); g.ellipse(284, 248, 13, 21, 0.2, -1.2, 1.9); g.stroke();                                   // ear
-    g.beginPath(); g.moveTo(196, 222); g.quadraticCurveTo(205, 217, 214, 222); g.stroke();                    // eye, looking down at the ball
-    g.lineWidth = 3.5; g.beginPath(); g.moveTo(190, 206); g.quadraticCurveTo(204, 200, 220, 204); g.stroke();  // a level, impartial brow
+    ringTextBottom('SINCE 1875');
+    // The referee in profile, facing left, looking down at the ball he holds up in his white-gloved hand (kept within
+    // the silver centre, as a coin's portrait is)
+    g.save(); g.beginPath(); g.arc(C, C, inner - 3, 0, Math.PI * 2); g.clip();
+    const line = (w, f) => { g.save(); g.strokeStyle = 'rgba(62,66,72,0.8)'; g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath(); f(); g.stroke(); g.restore(); };
+    // his black dinner jacket across the shoulders (dark metal), with the white shirt front showing between the lapels
+    relief(() => { g.beginPath(); g.moveTo(196, 372); g.bezierCurveTo(230, 356, 300, 352, 352, 366); g.bezierCurveTo(390, 378, 410, 400, 420, 430);
+      g.lineTo(150, 430); g.bezierCurveTo(160, 400, 176, 382, 196, 372); g.closePath(); }, shade(150, 360, 420, 430, '#5d646c', '#383d43'));
+    relief(() => { g.beginPath(); g.moveTo(240, 366); g.lineTo(326, 366); g.lineTo(290, 440); g.lineTo(276, 440); g.closePath(); }, shade(240, 366, 326, 440, '#f6f7f8', '#d8dce0'));   // shirt front
+    g.save(); g.strokeStyle = 'rgba(220,224,228,0.55)'; g.lineWidth = 2; g.beginPath();                                         // the lapels' edges catch the light
+    g.moveTo(236, 366); g.lineTo(276, 440); g.moveTo(330, 366); g.lineTo(290, 440); g.stroke(); g.restore();
+    g.fillStyle = 'rgba(70,74,80,0.8)'; for (const y of [398, 418]) { g.beginPath(); g.arc(283, y, 2.4, 0, Math.PI * 2); g.fill(); }   // shirt studs
+    // neck
+    relief(() => { g.beginPath(); g.moveTo(244, 330); g.bezierCurveTo(248, 346, 248, 358, 246, 368); g.lineTo(322, 366); g.bezierCurveTo(318, 344, 320, 322, 326, 304); g.closePath(); }, shade(240, 300, 330, 370, '#e6e9ec', '#c7ccd1'));
+    // head
+    relief(() => { g.beginPath();
+      g.moveTo(326, 306); g.bezierCurveTo(340, 292, 354, 270, 354, 246); g.bezierCurveTo(354, 206, 346, 176, 326, 152);
+      g.bezierCurveTo(304, 124, 262, 112, 232, 118); g.bezierCurveTo(214, 124, 204, 138, 206, 152);
+      g.bezierCurveTo(204, 168, 198, 182, 200, 192); g.lineTo(196, 206); g.lineTo(193, 214);
+      g.bezierCurveTo(186, 228, 174, 240, 170, 250); g.bezierCurveTo(170, 256, 174, 258, 180, 258); g.lineTo(190, 260);
+      g.lineTo(187, 271); g.lineTo(181, 277); g.lineTo(188, 282); g.lineTo(184, 290);
+      g.bezierCurveTo(180, 302, 184, 312, 196, 318); g.bezierCurveTo(214, 326, 234, 326, 244, 330);
+      g.bezierCurveTo(270, 324, 300, 318, 326, 306); g.closePath(); }, shade(180, 120, 350, 330, '#f0f2f4', '#c9ced3'));
+    // hair: neat, parted, with a wave, cut short over the ear
+    relief(() => { g.beginPath(); g.moveTo(206, 152); g.bezierCurveTo(204, 132, 222, 116, 250, 114); g.bezierCurveTo(296, 110, 340, 140, 352, 196);
+      g.bezierCurveTo(358, 230, 354, 262, 340, 282); g.bezierCurveTo(332, 262, 326, 244, 316, 232); g.bezierCurveTo(300, 210, 288, 196, 270, 186);
+      g.bezierCurveTo(250, 176, 226, 168, 206, 152); g.closePath(); }, shade(200, 110, 360, 280, '#dfe3e7', '#aeb4ba'));
+    line(2.5, () => { g.moveTo(222, 136); g.bezierCurveTo(250, 122, 300, 128, 330, 158); });                             // the parting
+    for (let i = 0; i < 4; i++) line(1.8, () => { g.moveTo(232 + i * 10, 150 + i * 8); g.bezierCurveTo(268 + i * 8, 140 + i * 9, 312, 166 + i * 12, 340 - i * 3, 206 + i * 16); });
+    // ear
+    relief(() => { g.beginPath(); g.ellipse(304, 240, 15, 25, 0.18, 0, Math.PI * 2); }, shade(290, 215, 320, 265, '#eef0f2', '#c4c9ce'));
+    line(2, () => { g.ellipse(304, 241, 8, 15, 0.18, -1.4, 1.6); });
+    // face: brow, eye (looking down at the ball), nose, mouth, cheek and jaw
+    line(3, () => { g.moveTo(204, 200); g.quadraticCurveTo(216, 194, 232, 199); });
+    line(2.2, () => { g.moveTo(206, 214); g.quadraticCurveTo(216, 208, 228, 213); g.moveTo(208, 216); g.quadraticCurveTo(217, 222, 226, 216); });
+    g.fillStyle = 'rgba(62,66,72,0.85)'; g.beginPath(); g.arc(212, 216, 2.6, 0, Math.PI * 2); g.fill();
+    line(1.8, () => { g.moveTo(184, 251); g.quadraticCurveTo(190, 254, 192, 248); });                                    // nostril
+    line(2, () => { g.moveTo(184, 280); g.quadraticCurveTo(192, 283, 200, 281); });                                       // mouth
+    line(1.6, () => { g.moveTo(236, 236); g.bezierCurveTo(232, 260, 236, 284, 248, 300); });                               // cheek
+    line(1.6, () => { g.moveTo(202, 318); g.bezierCurveTo(226, 322, 262, 318, 298, 300); });                               // jaw
+    // wing collar and bow tie
+    relief(() => { g.beginPath(); g.moveTo(246, 362); g.lineTo(226, 384); g.lineTo(270, 374); g.closePath(); g.moveTo(320, 362); g.lineTo(340, 386); g.lineTo(296, 374); g.closePath(); }, '#f6f7f8');
+    relief(() => { g.beginPath(); g.moveTo(283, 378); g.bezierCurveTo(268, 364, 252, 366, 250, 378); g.bezierCurveTo(252, 390, 268, 392, 283, 378);
+      g.moveTo(283, 378); g.bezierCurveTo(298, 364, 314, 366, 316, 378); g.bezierCurveTo(314, 390, 298, 392, 283, 378); g.moveTo(291, 378); g.arc(283, 378, 8, 0, Math.PI * 2); }, shade(250, 364, 316, 392, '#545a61', '#33373c'));   // black bow tie
+    // the gloved hand, cupping the ball in front of his face
+    relief(() => { g.beginPath(); g.arc(152, 298, 27, 0, Math.PI * 2); }, shade(128, 272, 178, 324, '#f6f7f8', '#c3c8cd'));   // the ball
+    g.fillStyle = 'rgba(255,255,255,0.9)'; g.beginPath(); g.arc(143, 288, 6, 0, Math.PI * 2); g.fill();                       // its shine
+    relief(() => { g.beginPath();                                                                                           // the glove
+      g.moveTo(122, 300); g.bezierCurveTo(118, 324, 124, 344, 140, 354); g.lineTo(140, 384); g.lineTo(186, 384); g.lineTo(184, 352);
+      g.bezierCurveTo(196, 340, 200, 320, 192, 304); g.bezierCurveTo(188, 296, 180, 296, 178, 306); g.bezierCurveTo(176, 318, 170, 326, 160, 326);
+      g.bezierCurveTo(146, 326, 134, 318, 130, 304); g.bezierCurveTo(128, 296, 122, 294, 122, 300); g.closePath(); }, shade(118, 290, 200, 386, '#fbfbfc', '#d4d8dc'));
+    line(1.6, () => { g.moveTo(130, 316); g.quadraticCurveTo(134, 330, 144, 336); g.moveTo(138, 322); g.quadraticCurveTo(144, 334, 154, 338); g.moveTo(178, 318); g.quadraticCurveTo(178, 332, 170, 340); });   // fingers, thumb
+    line(2, () => { g.moveTo(140, 366); g.lineTo(186, 366); });                                                              // the cuff
+    g.fillStyle = 'rgba(62,66,72,0.7)'; g.beginPath(); g.arc(176, 375, 2.6, 0, Math.PI * 2); g.fill();                       // its button
     g.restore();
-    relief(() => { g.beginPath(); g.moveTo(232, 396); g.lineTo(208, 426); g.lineTo(258, 412); g.closePath(); g.moveTo(318, 396); g.lineTo(340, 426); g.lineTo(290, 412); g.closePath(); });   // collar
-    relief(() => { g.beginPath(); g.moveTo(274, 412); g.lineTo(246, 400); g.lineTo(250, 426); g.closePath(); g.moveTo(274, 412); g.lineTo(302, 400); g.lineTo(298, 426); g.closePath(); g.moveTo(283, 412); g.arc(274, 412, 8, 0, Math.PI * 2); }, '#d6dade');   // bow tie
-    // the gloved hand and the ball, in front of the chin
-    relief(() => { g.beginPath(); g.arc(150, 330, 24, 0, Math.PI * 2); });                                     // ball
-    relief(() => { g.beginPath(); g.moveTo(128, 350); g.bezierCurveTo(124, 372, 140, 392, 168, 392); g.bezierCurveTo(188, 392, 196, 372, 190, 352);
-      g.bezierCurveTo(186, 340, 176, 336, 170, 346); g.bezierCurveTo(160, 356, 140, 356, 128, 350); g.closePath(); }, '#f4f5f6');   // glove
-    g.save(); g.strokeStyle = 'rgba(70,74,80,0.6)'; g.lineWidth = 2; for (const x of [146, 158, 170]) { g.beginPath(); g.moveTo(x, 360); g.lineTo(x + 4, 384); g.stroke(); } g.restore();
   } else if (heads) {
     ringText('D. ROYLE · SNOOKER LEGEND', -Math.PI / 2);
+    ringTextBottom('SINCE 1875');
     // Declan in profile, facing left: slicked-back hair, a big chin, one eyebrow raised; bow tie and wing collar
     const head = () => { g.beginPath();
       g.moveTo(300, 402); g.bezierCurveTo(300, 370, 296, 345, 306, 318);
@@ -2572,13 +2617,26 @@ function coinFace(heads, who = COIN_HEADS) {
     relief(() => { g.beginPath(); g.moveTo(263, 418); g.lineTo(232, 404); g.lineTo(236, 434); g.closePath(); g.moveTo(263, 418); g.lineTo(294, 404); g.lineTo(290, 434); g.closePath(); g.moveTo(272, 418); g.arc(263, 418, 9, 0, Math.PI * 2); }, '#d6dade');   // bow tie
   } else {
     ringText('DESK SNOOKER · FIFTEEN REDS', -Math.PI / 2);
+    ringTextBottom('147 · THE MAXIMUM');
     // The triangle of reds, raised in the metal
     const r = 15;
     for (let row = 0; row < 5; row++) for (let i = 0; i <= row; i++) {
       const x = C - row * r + i * 2 * r, y = 168 + row * r * 1.74;
       relief(() => { g.beginPath(); g.arc(x, y, r - 1.5, 0, Math.PI * 2); });
     }
-    relief(() => { g.beginPath(); g.moveTo(C - 98, 342); g.lineTo(C + 98, 342); g.lineTo(C + 98, 348); g.lineTo(C - 98, 348); g.closePath(); });
+    // two cues crossed beneath them, like a crest: each tapers from a darker butt to a ferrule and tip
+    g.save(); g.beginPath(); g.arc(C, C, inner - 3, 0, Math.PI * 2); g.clip();
+    const cueAt = (bx, by, tx, ty) => {
+      const dx = tx - bx, dy = ty - by, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+      const at = (t, w) => [bx + ux * len * t + nx * w, by + uy * len * t + ny * w];
+      const band = (t0, t1, w0, w1) => () => { g.beginPath(); const p = [at(t0, w0), at(t1, w1), at(t1, -w1), at(t0, -w0)]; g.moveTo(...p[0]); for (const q of p.slice(1)) g.lineTo(...q); g.closePath(); };
+      relief(band(0, 1, 6, 2.6), shade(bx, by, tx, ty, '#e8ebee', '#cfd3d8'));     // the whole cue, in pale ash
+      relief(band(0, 0.36, 6.2, 5), shade(bx, by, tx, ty, '#7d848c', '#5c636b'));   // the dark butt
+      relief(band(0.93, 0.965, 2.9, 2.75), '#f7f8f9');                              // ferrule
+      relief(band(0.965, 1, 2.75, 2.6), '#6b7279');                                 // tip
+    };
+    cueAt(142, 398, 372, 300); cueAt(370, 398, 140, 300);
+    g.restore();
   }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
   return t;
@@ -2609,7 +2667,7 @@ function startToss() {
 }
 function flipCoin(call) {
   setChoice(null);
-  Object.assign(toss, { phase: 'flip', call, result: Math.random() < 0.5 ? 'heads' : 'tails', t: 0, active: true });
+  Object.assign(toss, { phase: 'hand', call, result: Math.random() < 0.5 ? 'heads' : 'tails', t: 0, active: true });
   // Somewhere you'll see it: on the cloth in front of you in the headset, otherwise in the middle of the D
   let x = BAULK_X - D_R * 0.45, z = 0;
   if (xrMode) {
@@ -2617,22 +2675,56 @@ function flipCoin(call) {
     const q = table.worldToLocal(pos.clone()); x = Math.max(-L / 2 + 0.25, Math.min(L / 2 - 0.25, q.x)); z = Math.max(-W / 2 + 0.25, Math.min(W / 2 - 0.25, q.z));
   }
   toss.x = x; toss.z = z; coin.visible = true;
-  setMessage(`${game.players[toss.caller].name === 'You' ? 'You call' : game.players[toss.caller].name + ' calls'} ${call}. The coin is in the air…`);
-  playClick(0.5, 'cue');
+  // Turned so whichever face lands reads the right way up to you: its top towards the way you're looking
+  table.updateMatrixWorld();
+  const look = xrMode ? headPose().fwd.clone() : orbit.target.clone().sub(camera.position);
+  look.applyQuaternion(table.quaternion.clone().invert());
+  const ux = look.x, uz = look.z, un = Math.hypot(ux, uz) || 1;
+  toss.yaw = toss.result === 'tails' ? Math.atan2(-uz / un, -ux / un) : Math.atan2(-uz / un, ux / un);
+  toss.lx = ux / un; toss.lz = uz / un;
+  setMessage(`${game.players[toss.caller].name === 'You' ? 'You call' : game.players[toss.caller].name + ' calls'} ${call}.`);
+}
+// On the computer, keep the view on the coin (and the hand): `y` is the height to look at, `dist` how far away
+function watchCoin(y, dist, dt) {
+  const w = table.localToWorld(new THREE.Vector3(toss.x, y, toss.z)), from = camera.position.clone().sub(orbit.target);
+  from.y = Math.max(from.y, from.length() * 0.35); from.normalize();
+  orbit.target.lerp(w, Math.min(1, dt * 6)); camera.position.lerp(w.clone().addScaledVector(from, dist), Math.min(1, dt * 4)); desk.recentre = false;
 }
 function updateToss(dt) {
   if (!toss.active || toss.phase === 'call' || toss.phase === 'choose') return;
   toss.t += dt;
-  const T = 0.62, peak = 0.45, y0 = COIN_T / 2;
+  // The referee's white-gloved hand brings the coin in, balanced on its curled forefinger, flicks it up with the
+  // thumb, and withdraws while the coin spins up and drops on to the cloth
+  const HOLD = 0.24, V0 = 2.8, G0 = 9.81, rest = COIN_T / 2;
+  const TF = (V0 + Math.sqrt(V0 * V0 + 2 * G0 * (HOLD + 0.03 - rest))) / G0;       // how long it's in the air
+  const rig = referee.rig, lx = toss.lx || 1, lz = toss.lz || 0;
+  const handAt = (k, out) => new THREE.Vector3(toss.x - lx * out, HOLD + 0.1 * k, toss.z - lz * out);
+  const showHand = (p, pose) => {
+    if (!rig) return;
+    table.updateMatrixWorld();
+    rig.setPose(pose);
+    // a loose fist on its side, thumb uppermost, knuckles towards the table's middle
+    const f = new THREE.Vector3(lx, -0.35, lz).normalize().applyQuaternion(table.quaternion), side = new THREE.Vector3(-lz, 0, lx).applyQuaternion(table.quaternion);
+    rig.place(rig.F, rig.N, f, side, table.localToWorld(p.clone()));
+  };
+  if (toss.phase === 'hand') {
+    const u = Math.min(1, toss.t / 0.8), sm = u * u * (3 - 2 * u), p = handAt(1 - sm, 0.35 * (1 - sm));
+    showHand(p, 'grip');
+    coin.position.copy(p).add(new THREE.Vector3(0, 0.03, 0)); coin.rotation.set(0, toss.yaw, 0);
+    if (u >= 1) { toss.phase = 'flip'; toss.t = 0; playClick(0.4, 'cue'); }
+    if (!xrMode) watchCoin(p.y, 0.6, dt);
+    return;
+  }
   if (toss.phase === 'flip') {
-    const u = Math.min(1, toss.t / T), h = 4 * peak * u * (1 - u);
-    const turns = 5 * Math.PI * 2 + (toss.result === 'tails' ? Math.PI : 0);
-    coin.position.set(toss.x, y0 + h, toss.z); coin.rotation.set(turns * (1 - Math.pow(1 - u, 1.6)), 0.4, 0);
-    if (!xrMode) {        // the view comes round to watch it
-      const w = table.localToWorld(new THREE.Vector3(toss.x, 0.05, toss.z)), from = camera.position.clone().sub(orbit.target).normalize();
-      orbit.target.lerp(w, Math.min(1, dt * 4)); camera.position.lerp(w.clone().addScaledVector(from, 0.7), Math.min(1, dt * 3)); desk.recentre = false;
-    }
-    if (u >= 1) { toss.phase = 'landed'; toss.t = 0; playClick(0.8, 'ball'); }
+    const t = toss.t, y = Math.max(rest, HOLD + 0.03 + V0 * t - 0.5 * G0 * t * t), u = Math.min(1, t / TF);
+    const turns = 7 * Math.PI * 2 + (toss.result === 'tails' ? Math.PI : 0);
+    coin.position.set(toss.x, y, toss.z); coin.rotation.set(turns * u, toss.yaw, 0);
+    // the hand opens a little after the flick and draws back out of the way
+    const w = Math.min(1, t / 0.5);
+    if (rig) { if (w < 1) showHand(handAt(w * 0.6, 0.45 * w * w), t < 0.12 ? 'grip' : 'open'); else rig.root.visible = false; }
+    const T = TF;
+    if (!xrMode) watchCoin(y * 0.75, 0.85, dt);           // the view follows it up and down
+    if (u >= 1 || t >= T) { coin.position.y = rest; toss.phase = 'landed'; toss.t = 0; playClick(0.8, 'ball'); if (rig) rig.root.visible = false; }
     return;
   }
   if (toss.phase === 'landed' && !xrMode) {               // a close look at how it's landed
