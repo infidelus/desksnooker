@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 90;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 91;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -5520,6 +5520,20 @@ function obstacleUnder(q, clear = 0.014) {
   for (const b of balls) if (b.onTable && !b.falling && Math.hypot(b.x - q.x, b.z - q.z) < R + clear) h = Math.max(h, 2 * R);
   return h;
 }
+// The parts of a rest's head low enough to touch a ball (its legs and feet), as points in the head's own frame with the
+// lowest at 0: worked out once for each kind of head
+function headLowPoints(head) {
+  if (head.userData.low) return head.userData.low;
+  head.updateMatrixWorld(true);
+  const inv = head.matrixWorld.clone().invert(), pts = [], v = new THREE.Vector3();
+  head.traverse(o => {
+    if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+    const pos = o.geometry.attributes.position, m = inv.clone().multiply(o.matrixWorld), step = Math.max(1, Math.floor(pos.count / 200));
+    for (let i = 0; i < pos.count; i += step) pts.push(v.fromBufferAttribute(pos, i).applyMatrix4(m).clone());
+  });
+  const minY = Math.min(...pts.map(q => q.y));
+  return (head.userData.low = pts.filter(q => q.y - minY < 2 * R + 0.01).map(q => new THREE.Vector3(q.x, q.y - minY, q.z)));
+}
 // Put a rest under a cue: its head at `point` (in the room), the cue along `dir`. The shaft runs back to the handle:
 // where the bridge hand holds it (in the headset), or else just in from the near cushion on the bridge-hand side.
 // Returns where its handle is and which way the shaft runs, for the hand that holds it.
@@ -5530,20 +5544,19 @@ function placeRest(rest, kind, point, dir, bridgeSide, handleAt = null, rigid = 
   table.updateMatrixWorld();
   rest.g.position.copy(table.position); rest.g.quaternion.copy(table.quaternion); rest.g.updateMatrixWorld();
   const tq = table.quaternion, inv = tq.clone().invert(), len = REST_LEN[kind];
-  const p = table.worldToLocal(point.clone()), d = dir.clone().applyQuaternion(inv); d.y = 0; d.normalize();
+  let p = table.worldToLocal(point.clone());
+  const d3 = dir.clone().applyQuaternion(inv), d = d3.clone(); d.y = 0; d.normalize();
   const side = new THREE.Vector3(-d.z, 0, d.x).multiplyScalar(bridgeSide === 'left' ? -1 : 1);
   const head = rest.heads[kind]; head.visible = true;
   // The head stands on the cloth (or a little off it) with the cue lying in its top
-  const natural = REST_INFO[kind].head, lift = Math.max(0, p.y - 0.006 - natural);
-  let handle;
-  if (handleAt) handle = table.worldToLocal(handleAt.clone());
-  else {
-    const back = Math.max(0.3, edgeBehind(p.x, p.z, d.x, d.z) - CUSH_W - RAIL_W - 0.06);
-    handle = new THREE.Vector3(p.x, 0, p.z).addScaledVector(d, -back).addScaledVector(side, 0.07);
-    handle.y = 0.025;
-  }
-  // (a cue lying lower than the head stands is shown with the head a little squat, rather than the cue through it)
-  const squat = Math.max(0.6, Math.min(1, (p.y - 0.006 - lift) / natural));
+  const natural = REST_INFO[kind].head;
+  let lift, squat;
+  const setP = q => {
+    p = q; lift = Math.max(0, p.y - 0.006 - natural);
+    // (a cue lying lower than the head stands is shown with the head a little squat, rather than the cue through it)
+    squat = Math.max(0.6, Math.min(1, (p.y - 0.006 - lift) / natural));
+  };
+  setP(p);
   const [ax, ay] = head.userData.attach;
   // The head turns with the shaft, which comes from behind it
   const footFor = h => {
@@ -5567,20 +5580,47 @@ function placeRest(rest, kind, point, dir, bridgeSide, handleAt = null, rigid = 
     h.y = foot.y + slope * dh;
     return slope - slope0;
   };
-  let fwd, foot;
-  if (handleAt) ({ fwd, foot } = footFor(handle)), settle(handle, foot);
+  // Would the head's legs and feet (the parts of it down among the balls) touch a ball, standing at p facing fwd?
+  const low = headLowPoints(head);
+  const headHits = fwd => {
+    const th = Math.atan2(-fwd.z, fwd.x), c = Math.cos(th), sn = Math.sin(th);
+    for (const q of low) {
+      const wx = p.x + q.x * c + q.z * sn, wz = p.z - q.x * sn + q.z * c, wy = lift + q.y * squat;
+      for (const b of balls) if (b.onTable && !b.falling && (wx - b.x) ** 2 + (wy - R) ** 2 + (wz - b.z) ** 2 < (R + 0.004) ** 2) return true;
+    }
+    return false;
+  };
+  let handle, fwd, foot;
+  if (handleAt) { handle = table.worldToLocal(handleAt.clone()); ({ fwd, foot } = footFor(handle)); settle(handle, foot); }
   else {
     // Laid down straight back along the shot if it fits on the table like that; if not, angled off to one side (as a
-    // player would) until it lies flat without touching anything; and failing that, straight back, raised to clear
-    const v0 = handle.clone().sub(p); v0.y = 0;
-    let chosen = null;
-    for (const a of [0, 0.12, -0.12, 0.25, -0.25, 0.4, -0.4, 0.55, -0.55]) {
-      const h = p.clone().add(v0.clone().applyAxisAngle(UP, a)); h.y = handle.y;
-      const f = footFor(h), tipped = settle(h, f.foot);
-      if (a === 0) chosen = { h, ...f };
-      if (tipped < 1e-4) { chosen = { h, ...f }; break; }
+    // player would) until it lies flat without touching anything; and failing that, straight back, raised to clear.
+    // And its head stood where its legs are clear of the balls: a little nearer the cue ball or further back along the
+    // cue if need be, as a player would put it down among the balls.
+    const p0 = p.clone(), hf = Math.hypot(d3.x, d3.z) || 1;
+    const key = `${kind}|${p0.x.toFixed(3)},${p0.y.toFixed(3)},${p0.z.toFixed(3)}|${d.x.toFixed(3)},${d.z.toFixed(3)}|${bridgeSide}|` + balls.map(b => b.onTable ? `${b.x.toFixed(3)},${b.z.toFixed(3)}` : '-').join(';');
+    let pick = rest.placeCache && rest.placeCache.key === key ? rest.placeCache.pick : null;
+    if (!pick) {
+      let first = null, clearTipped = null;
+      search: for (const shift of [0, 0.03, -0.03, 0.06, -0.06, 0.09, -0.09, 0.12, 0.15, -0.12, -0.16, -0.2, -0.25, -0.3]) {
+        setP(p0.clone().addScaledVector(d3, shift / hf));
+        const back = Math.max(0.3, edgeBehind(p.x, p.z, d.x, d.z) - CUSH_W - RAIL_W - 0.06);
+        const h0 = new THREE.Vector3(p.x, 0, p.z).addScaledVector(d, -back).addScaledVector(side, 0.07); h0.y = 0.025;
+        const v0 = h0.clone().sub(p); v0.y = 0;
+        for (const a of [0, 0.12, -0.12, 0.25, -0.25, 0.4, -0.4, 0.55, -0.55]) {
+          const h = p.clone().add(v0.clone().applyAxisAngle(UP, a)); h.y = h0.y;
+          const f = footFor(h), tipped = settle(h, f.foot), hits = headHits(f.fwd);
+          const cand = { p: p.clone(), h };
+          if (!first) first = cand;
+          if (!hits && tipped < 1e-4) { pick = cand; break search; }
+          if (!hits && !clearTipped && a === 0) clearTipped = cand;
+        }
+      }
+      pick = pick || clearTipped || first;
+      rest.placeCache = { key, pick };
     }
-    handle.copy(chosen.h); fwd = chosen.fwd; foot = chosen.foot;
+    setP(pick.p.clone()); handle = pick.h.clone();
+    ({ fwd, foot } = footFor(handle)); settle(handle, foot);
   }
   head.position.set(p.x, lift, p.z);
   head.rotation.set(0, Math.atan2(-fwd.z, fwd.x), 0);      // its +x (built facing the cue ball) along fwd
@@ -5603,7 +5643,7 @@ function placeRest(rest, kind, point, dir, bridgeSide, handleAt = null, rigid = 
   rest.shaft.position.copy(foot); rest.shaft.quaternion.setFromUnitVectors(UP, along);
   rest.shaft.children[0].scale.set(1, len, 1); rest.cap.position.y = len - 0.01;
   rest.g.position.copy(table.position); rest.g.quaternion.copy(tq); rest.g.visible = true;
-  return { handle: table.localToWorld(handle.clone()), shaftDir: along.applyQuaternion(tq) };
+  return { handle: table.localToWorld(handle.clone()), shaftDir: along.applyQuaternion(tq), head: table.localToWorld(p.clone()) };
 }
 // Effects on the shot, with guided rests: harder to aim, less power, less spin
 function restLimits(kind, dirX, dirZ, speed, r) {
