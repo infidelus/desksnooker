@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 84;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 85;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2791,7 +2791,16 @@ function autoSave(dt) {
   const mode = settings.mode;
   if (!['ai', 'two', 'champ'].includes(mode)) return;
   if (match.over) { if (lastSaveText) clearSave(); return; }
-  if (anyMoving() || shot || choice || toss.active || game.frameOver || referee.job) return;
+  // Between frames (the frame won or conceded, the next not yet started): save the match as it stands, ready for
+  // the next frame, so a reload doesn't go back into the frame that's already over
+  if (game.frameOver) {
+    const text = JSON.stringify({ v: SAVE_V, mode, opponent: settings.opponent, reds: settings.reds, rules: settings.rules, between: true,
+      match: { bestOf: match.bestOf, frames: match.frames, breaker: 1 - match.breaker, stats: match.stats, log: match.log },
+      game: { players: game.players.map(p => ({ name: p.name, score: 0, ai: p.ai, misses: 0 })) } });
+    if (text !== lastSaveText) { lastSaveText = text; try { localStorage.setItem(SAVE_KEY, text); } catch (e) { /* storage blocked */ } }
+    return;
+  }
+  if (anyMoving() || shot || choice || toss.active || referee.job) return;
   const idx = b => (b ? balls.indexOf(b) : -1);
   const data = { v: SAVE_V, mode, opponent: settings.opponent, reds: settings.reds, rules: settings.rules,
     match: { bestOf: match.bestOf, frames: match.frames, breaker: match.breaker, stats: match.stats, log: match.log },
@@ -2807,7 +2816,8 @@ function autoSave(dt) {
 function offerResume(sv) {
   const opp = sv.game.players[1] ? sv.game.players[1].name : '';
   const vs = sv.mode === 'two' ? 'Player 1 v Player 2' : `against ${opp}`;
-  setChoice({ title: 'Carry on?', text: `You have an unfinished match ${vs}: frames ${sv.match.frames[0]}–${sv.match.frames[1]}, this frame ${sv.game.players[0].score}–${sv.game.players[1].score}.`, buttons: [
+  const where = sv.between ? `next up, frame ${sv.match.frames[0] + sv.match.frames[1] + 1}` : `this frame ${sv.game.players[0].score}–${sv.game.players[1].score}`;
+  setChoice({ title: 'Carry on?', text: `You have an unfinished match ${vs}: frames ${sv.match.frames[0]}–${sv.match.frames[1]}, ${where}.`, buttons: [
     { t: 'Carry on with it', act: () => { setChoice(null); applySave(sv); } },
     { t: 'Start afresh', act: () => { setChoice(null); clearSave(); startMatch(); } }] });
 }
@@ -2816,6 +2826,11 @@ function applySave(sv) {
   startMatch.noToss = true; startMatch(); startMatch.noToss = false;      // the right table and players, then...
   Object.assign(match, { bestOf: sv.match.bestOf, frames: sv.match.frames, breaker: sv.match.breaker, stats: sv.match.stats || match.stats, log: sv.match.log || match.log, over: false });
   sv.game.players.forEach((p, i) => Object.assign(game.players[i], p));
+  if (sv.between) {                                                          // the last frame was over: start the next one
+    newFrame(); lastSaveText = null;
+    setMessage(`Carrying on: frames ${match.frames[0]}–${match.frames[1]}. ${game.players[game.current].name} to break. Cue ball in hand in the D.`);
+    return;
+  }
   const g = sv.game;
   Object.assign(game, { current: g.current, ballOn: g.ballOn, breakScore: g.breakScore, highBreak: g.highBreak, respotted: g.respotted, fstats: g.fstats || game.fstats,
     freeBall: g.freeBall === true ? true : g.freeBall && g.freeBall.nominated >= 0 ? { nominated: balls[g.freeBall.nominated] } : false,
