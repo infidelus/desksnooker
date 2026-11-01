@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 85;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 86;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2400,7 +2400,7 @@ function startMatch() {
   newFrame();
   // A fresh match against the computer, in the championship or between two of you here starts with the toss
   const fresh = match.frames[0] + match.frames[1] === 0 && (settings.mode === 'ai' || settings.mode === 'two' || (settings.mode === 'champ' && champMatch()));
-  if (fresh && !startMatch.noToss) startToss(); else hideCoin();
+  if (fresh && !startMatch.noToss) startToss(); else { hideCoin(); if (!startMatch.noToss) announceFrame(); }
 }
 
 function newFrame() {
@@ -2412,12 +2412,23 @@ function newFrame() {
   game.fstats = [newStats(), newStats()];
   if (typeof ai !== 'undefined') { ai.avoid = []; ai.lastShot = null; }
   setChoice(null);
-  Object.assign(game, { freeBall: false, nominated: null, current: match.breaker, ballOn: 'red', breakScore: 0, highBreak: settings.mode === 'practice' ? game.highBreak : 0, frameOver: false, respotted: false, practiceOn: null });
+  Object.assign(game, { freeBall: false, nominated: null, current: match.breaker, ballOn: 'red', breakScore: 0, highBreak: settings.mode === 'practice' ? game.highBreak : 0, frameOver: false, respotted: false, practiceOn: null, stale: { hist: [], count: 0, stage: 0 } });
   ballInHand = true;
   if (settings.mode === 'practice') setMessage('Practice: break off from the D.');
   else if (settings.mode === 'champ' && !champMatch()) setMessage(champ ? champSummary() : 'Choose New championship to start.');
   else setMessage(`${game.players[game.current].name} to break. Cue ball in hand in the D.`);
   if (settings.mode === 'champ' && champMatch()) applause(4, 0.6);   // the players come out
+}
+
+// The referee announces each frame as it starts ("Second frame. Your opponent to break."). In two-player games here,
+// where "you" could be either of you, just the frame.
+function announceFrame(after = false) {
+  if (!['ai', 'two', 'champ'].includes(settings.mode) || (settings.mode === 'champ' && !champMatch())) return;
+  const n = match.frames[0] + match.frames[1] + 1;
+  if (n > 7) return;
+  const keys = ['frame' + n], b = game.players[match.breaker];
+  if (settings.mode !== 'two') keys.push(b.ai === null || b.ai === undefined ? 'youbreak' : 'oppbreak');
+  (after ? sayAfter : say)(...keys);
 }
 
 function frameWon(w, text) {
@@ -2485,6 +2496,7 @@ function continueAfterFrame(fromNet = false) {
   if (match.over) { if (settings.mode === 'champ') { if (champMatch()) startMatch(); else setMessage(champSummary()); } else startMatch(); return; }
   match.breaker = 1 - match.breaker;
   newFrame();
+  announceFrame();
 }
 
 // =====================================================================
@@ -2755,7 +2767,7 @@ function updateToss(dt) {
   if ((toss.phase === 'landed' && xrMode && toss.t > 2.5) || (toss.phase === 'panout')) {
     const winner = toss.call === toss.result ? toss.caller : 1 - toss.caller, w = game.players[winner], other = game.players[1 - winner];
     const res = toss.result === 'heads' ? 'Heads' : 'Tails';
-    const breakBy = i => { match.breaker = i; hideCoin(); newFrame(); setMessage(`${res}: ${w.name === 'You' ? 'you win' : w.name + ' wins'} the toss. ${game.players[i].name} to break. Cue ball in hand in the D.`); };
+    const breakBy = i => { match.breaker = i; hideCoin(); newFrame(); announceFrame(true); setMessage(`${res}: ${w.name === 'You' ? 'you win' : w.name + ' wins'} the toss. ${game.players[i].name} to break. Cue ball in hand in the D.`); };
     if (w.ai !== null && w.ai !== undefined) {
       // The computer's choice: the stronger players like to break; the rest are happy to let you
       const prof = AI_PLAYERS[w.ai], breaks = Math.random() < (prof.rating >= 1500 ? 0.55 : 0.35);
@@ -2827,7 +2839,7 @@ function applySave(sv) {
   Object.assign(match, { bestOf: sv.match.bestOf, frames: sv.match.frames, breaker: sv.match.breaker, stats: sv.match.stats || match.stats, log: sv.match.log || match.log, over: false });
   sv.game.players.forEach((p, i) => Object.assign(game.players[i], p));
   if (sv.between) {                                                          // the last frame was over: start the next one
-    newFrame(); lastSaveText = null;
+    newFrame(); announceFrame(); lastSaveText = null;
     setMessage(`Carrying on: frames ${match.frames[0]}–${match.frames[1]}. ${game.players[game.current].name} to break. Cue ball in hand in the D.`);
     return;
   }
@@ -2920,6 +2932,7 @@ function endShotRules(s) {
   else if (j.points > 0) { st.potShots++; st.pots += potted.length; }
 
   if (j.foul) {
+    game.stale.hist = []; game.stale.count = 0;
     const snap = undoStack[undoStack.length - 1];
     const ballOnBefore = game.ballOn;
     them.score += j.penalty;
@@ -2936,7 +2949,11 @@ function endShotRules(s) {
     me.misses = miss && s.clearView ? (me.misses || 0) + 1 : 0;
     if (miss) st.misses++;
     say(miss ? 'miss' : 'foul', j.penalty);
-    if (me.misses >= 3) { frameWon(1 - meI, `Third miss in a row with a clear view of the ball on: the frame is awarded to ${them.name}.`); return; }
+    if (me.misses >= 3) {
+      // the referee speaks to the player who missed, except against the computer, where it's always to you
+      sayAfter(settings.mode !== 'two' && (them.ai === null || them.ai === undefined) ? 'awardyou' : 'awardopp');
+      frameWon(1 - meI, `Third miss in a row with a clear view of the ball on: the frame is awarded to ${them.name}.`); return;
+    }
     if (cuePotted) placeCueInHand();
     const freeAvail = !cuePotted && snookeredOnAll(balls, game.ballOn);
     const warn = me.misses === 2 ? ` Warning: another miss with a clear view will forfeit the frame.` : '';
@@ -2947,6 +2964,7 @@ function endShotRules(s) {
   me.misses = 0;
 
   if (j.points > 0) {
+    game.stale = { hist: [], count: 0, stage: 0 };
     const before = game.breakScore;
     me.score += j.points; game.breakScore += j.points; game.highBreak = Math.max(game.highBreak, game.breakScore);
     if (before < 100 && game.breakScore >= 100) applause(6, 1); else if (before < 50 && game.breakScore >= 50) applause(2.8, 0.5);
@@ -2962,7 +2980,60 @@ function endShotRules(s) {
     if (game.ballOn === 'colour') game.ballOn = redsLeft() > 0 ? 'red' : 2;
     game.current = 1 - game.current; game.breakScore = 0;
     setMessage(`${game.players[game.current].name} to play.`);
+    checkStalemate();
   }
+}
+
+// ---------- Stalemate ----------
+// When neither player will open the table up (each just nudging the cue ball up to a ball and the other nudging it
+// back), the referee offers a restart. The sign: after a shot, the balls are back where they were two shots before
+// (the cue ball within 5 cm, the others barely touched), three times running, with nothing potted.
+function stalePosition() { return balls.map(b => b.onTable ? [b.x, b.z] : null); }
+function samePosition(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  const ci = balls.indexOf(cueBall);
+  let moved = 0;
+  for (let i = 0; i < a.length; i++) {
+    if (!a[i] !== !b[i]) return false;
+    if (!a[i]) continue;
+    const d = Math.hypot(a[i][0] - b[i][0], a[i][1] - b[i][1]);
+    if (i === ci) { if (d > 0.05) return false; } else if (d > 0.1) return false; else if (d > 0.02) moved++;
+  }
+  return moved <= 2;                                                     // (the ball or two being nudged)
+}
+function checkStalemate() {
+  if (!['ai', 'two', 'champ'].includes(settings.mode) || game.frameOver) return;
+  const st = game.stale, pos = stalePosition(), back = st.hist[st.hist.length - 2];
+  st.count = back && samePosition(pos, back) ? st.count + 1 : 0;
+  st.hist.push(pos); if (st.hist.length > 6) st.hist.shift();
+  if (st.count < 3) return;
+  st.count = 0;
+  if (st.stage === 0) askRestart();
+  else if (st.stage === 2) { say('stalemate'); restartFrame('Stalemate: the referee restarts the frame.'); }
+}
+function askRestart() {
+  game.stale.stage = 1;
+  say('restartq');
+  const playOn = why => {
+    setChoice(null); game.stale.stage = 2; game.stale.count = 0; game.stale.hist = [];
+    sayAfter('fewmore');
+    setMessage(`${why}The referee will allow a few more shots each to end the stalemate. ${game.players[game.current].name} to play.`);
+  };
+  let buttons;
+  if (settings.mode === 'two') buttons = [{ t: 'We both agree: restart', act: () => { setChoice(null); restartFrame('The frame is restarted by agreement.'); } }, { t: 'Play on', act: () => playOn('') }];
+  else {
+    // The computer agrees unless it's comfortably ahead
+    const h = game.players.findIndex(p => p.ai === null || p.ai === undefined), c = game.players[1 - h];
+    const agrees = c.score - game.players[h].score < 15;
+    buttons = [{ t: 'Restart the frame', act: () => { if (agrees) { setChoice(null); restartFrame(`${c.name} agrees: the frame is restarted.`); } else playOn(`${c.name} would rather play on. `); } },
+      { t: 'Play on', act: () => playOn('') }];
+  }
+  setChoice({ title: 'Stalemate?', text: 'The referee thinks neither of you can open the table up without giving the frame away. Would you like to restart the frame?', buttons });
+}
+function restartFrame(text) {
+  newFrame();                                                            // (the same player breaks again)
+  announceFrame(true);
+  setMessage(`${text} ${game.players[game.current].name} to break. Cue ball in hand in the D.`);
 }
 
 // ---------- Choices after a foul ----------
@@ -2991,6 +3062,7 @@ function offerAfterFoul(f) {
     ballInHand = f.snap.ballInHand; game.ballOn = f.ballOnBefore; game.current = f.offender; setChoice(null);
     const on = f.ballOnBefore === 'colour' ? 'a colour (the red before still counts)' : f.ballOnBefore === 'red' ? 'a red' : `the ${nameOf(f.ballOnBefore)}`;
     setMessage(`Balls replaced as they were. ${off.name} replay${off.name === 'You' ? '' : 's'} the same shot, still on ${on}.`);
+    if (off.misses === 2) sayAfter('warnmiss');      // a third miss would give the frame away
     askNomination(true);
   } });
   if (inc.ai !== null) { aiChooseAfterFoul(f, opts); return; }
@@ -6771,7 +6843,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
