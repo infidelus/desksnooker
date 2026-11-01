@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 87;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 88;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3051,10 +3051,11 @@ function offerAfterFoul(f) {
   const off = game.players[f.offender], inc = game.players[f.incoming];
   const them = off.name === 'You' ? 'you' : off.name;
   const opts = [];
-  opts.push({ id: 'play', t: f.cuePotted ? 'Play from hand' : 'Play from here', act: () => { setChoice(null); setMessage(`${inc.name} to play.`); } });
-  if (f.freeAvail) opts.push({ id: 'free', t: 'Take a free ball', act: () => nominateFreeBall() });
+  // Misses only count towards the three if the balls are put back each time: any other choice starts the count again
+  opts.push({ id: 'play', t: f.cuePotted ? 'Play from hand' : 'Play from here', act: () => { off.misses = 0; setChoice(null); setMessage(`${inc.name} to play.`); } });
+  if (f.freeAvail) opts.push({ id: 'free', t: 'Take a free ball', act: () => { off.misses = 0; nominateFreeBall(); } });
   opts.push({ id: 'again', t: `Make ${them} play again from where the balls are`, act: () => {
-    game.current = f.offender; setChoice(null);
+    off.misses = 0; game.current = f.offender; setChoice(null);
     setMessage(`${off.name} must play again from where the balls lie. Ball on: ${ballOnText().toLowerCase()}.`);
   } });
   if (f.miss && f.snap) opts.push({ id: 'replace', t: `Put the balls back: ${them} replay${them === 'you' ? '' : 's'} the same shot`, act: () => {
@@ -3115,7 +3116,7 @@ function aiChooseAfterFoul(f, opts) {
   const pick = id => opts.find(o => o.id === id);
   let o;
   if (f.miss && best < 0.4 && pick('replace')) o = pick('replace');
-  else if (f.freeAvail) { o = { act: () => { game.freeBall = true; setChoice(null); sayAfter('free'); } }; }
+  else if (f.freeAvail) { o = { act: () => { game.players[f.offender].misses = 0; game.freeBall = true; setChoice(null); sayAfter('free'); } }; }
   else o = pick('play');
   o.act();
   if (o.id !== 'replace') setMessage(`${f.head} ${game.players[f.incoming].name} ${o.id === 'play' ? 'plays from here.' : 'takes a free ball.'}`);
@@ -6850,7 +6851,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { canShootNow: () => canShoot(), checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
