@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 76;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 77;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2342,7 +2342,7 @@ function remainingPoints() {
 let choice = null;   // a decision the incoming player has to make after a foul
 const isAITurn = () => isMatch() && !game.frameOver && game.players[game.current].ai !== null;
 function canShoot(forAI) {
-  return !anyMoving() && !game.frameOver && !menuOpen && !grabbedCue && !choice && (forAI || (!isAITurn() && !isRemoteTurn() && !coachBusy()));
+  return !anyMoving() && !game.frameOver && !menuOpen && !grabbedCue && !choice && !toss.active && (forAI || (!isAITurn() && !isRemoteTurn() && !coachBusy()));
 }
 
 function takeSnapshot() {
@@ -2398,6 +2398,9 @@ function startMatch() {
   match.frames = [0, 0]; match.breaker = 0; match.over = false;
   if (settings.mode === 'champ' && champ && champ.curFrames) { match.frames = champ.curFrames.slice(); match.breaker = (match.frames[0] + match.frames[1]) % 2; }
   newFrame();
+  // A fresh match against the computer, in the championship or between two of you here starts with the toss
+  const fresh = match.frames[0] + match.frames[1] === 0 && (settings.mode === 'ai' || settings.mode === 'two' || (settings.mode === 'champ' && champMatch()));
+  if (fresh && !startMatch.noToss) startToss(); else hideCoin();
 }
 
 function newFrame() {
@@ -2482,6 +2485,237 @@ function continueAfterFrame(fromNet = false) {
   if (match.over) { if (settings.mode === 'champ') { if (champMatch()) startMatch(); else setMessage(champSummary()); } else startMatch(); return; }
   match.breaker = 1 - match.breaker;
   newFrame();
+}
+
+// =====================================================================
+//  The toss: a coin in the style of a £2 piece (gold-coloured ring, silver-coloured centre, milled and lettered
+//  edge) but with the game's own designs. Heads: Declan Royle, the game's snooker legend, in profile. Tails: a
+//  triangle of fifteen reds.
+// =====================================================================
+const COIN_R = 0.0142, COIN_T = 0.0025;
+const COIN_HEADS = 'declan';                            // whose head is on the coin: 'declan' or 'referee'
+function coinFace(heads, who = COIN_HEADS) {
+  const c = document.createElement('canvas'); c.width = c.height = 512;
+  const g = c.getContext('2d'), C = 256, ring = 250, inner = 178;
+  const metal = (r0, r1, a, b) => { const gr = g.createRadialGradient(C - 60, C - 70, r0, C, C, r1); gr.addColorStop(0, a); gr.addColorStop(1, b); return gr; };
+  g.fillStyle = metal(20, ring, '#ecd38a', '#a8822e'); g.beginPath(); g.arc(C, C, ring, 0, Math.PI * 2); g.fill();      // the ring
+  g.strokeStyle = 'rgba(80,55,10,0.55)'; g.lineWidth = 4; g.beginPath(); g.arc(C, C, ring - 8, 0, Math.PI * 2); g.stroke();
+  for (let i = 0; i < 120; i++) { const a = i / 120 * Math.PI * 2; g.strokeStyle = 'rgba(90,60,10,0.35)'; g.lineWidth = 2; g.beginPath(); g.moveTo(C + Math.cos(a) * (ring - 4), C + Math.sin(a) * (ring - 4)); g.lineTo(C + Math.cos(a) * (ring - 10), C + Math.sin(a) * (ring - 10)); g.stroke(); }
+  g.fillStyle = metal(10, inner, '#f2f4f6', '#9aa0a8'); g.beginPath(); g.arc(C, C, inner, 0, Math.PI * 2); g.fill();     // the centre
+  g.strokeStyle = 'rgba(60,62,66,0.6)'; g.lineWidth = 3; g.beginPath(); g.arc(C, C, inner, 0, Math.PI * 2); g.stroke();
+  // Raised lettering round the ring
+  const ringText = (text, mid) => {
+    g.save(); g.font = '700 30px Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const r = (ring + inner) / 2 + 2, total = [...text].reduce((t, ch) => t + g.measureText(ch).width, 0) + text.length * 2.5;
+    let a = mid - total / r / 2;
+    for (const ch of text) {
+      const w = g.measureText(ch).width + 2.5; a += w / 2 / r;
+      g.save(); g.translate(C + Math.cos(a) * r, C + Math.sin(a) * r); g.rotate(a + Math.PI / 2);
+      g.fillStyle = 'rgba(255,240,190,0.7)'; g.fillText(ch, -1, -1); g.fillStyle = '#6e5216'; g.fillText(ch, 0, 0);
+      g.restore(); a += w / 2 / r;
+    }
+    g.restore();
+  };
+  // Relief: a shape drawn lighter, with a dark edge below-right and a bright one above-left
+  const relief = (path, fill = '#e4e7ea') => {
+    g.save(); g.translate(2.5, 2.5); g.fillStyle = 'rgba(40,42,46,0.55)'; path(); g.fill(); g.restore();
+    g.save(); g.translate(-1.5, -1.5); g.fillStyle = 'rgba(255,255,255,0.8)'; path(); g.fill(); g.restore();
+    g.fillStyle = fill; path(); g.fill();
+  };
+  if (heads && who === 'referee') {
+    ringText('THE REFEREE · QUIET PLEASE', -Math.PI / 2);
+    // A referee in profile, facing left: neat parted hair, bow tie and wing collar, and a white-gloved hand holding up
+    // a ball to be cleaned
+    const head = () => { g.beginPath();
+      g.moveTo(312, 396); g.bezierCurveTo(310, 366, 306, 342, 314, 318);
+      g.bezierCurveTo(342, 284, 344, 204, 314, 166); g.bezierCurveTo(290, 134, 236, 124, 204, 138);
+      g.bezierCurveTo(184, 148, 176, 168, 182, 188); g.lineTo(186, 204);
+      g.lineTo(180, 220); g.bezierCurveTo(170, 236, 160, 246, 164, 254); g.lineTo(180, 260);
+      g.lineTo(176, 274); g.lineTo(184, 282); g.lineTo(178, 292);
+      g.bezierCurveTo(174, 306, 184, 322, 202, 326); g.bezierCurveTo(222, 330, 236, 328, 246, 324);
+      g.bezierCurveTo(244, 350, 242, 372, 238, 396); g.closePath(); };
+    relief(head);
+    g.save(); g.strokeStyle = 'rgba(70,74,80,0.75)'; g.lineWidth = 3; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(196, 150); g.bezierCurveTo(240, 130, 300, 150, 326, 196); g.stroke();             // the parting
+    for (let i = 1; i < 5; i++) { g.beginPath(); g.moveTo(198 + i * 4, 152 + i * 8); g.bezierCurveTo(244, 140 + i * 9, 296, 162 + i * 10, 324, 204 + i * 12); g.stroke(); }
+    g.beginPath(); g.ellipse(284, 248, 13, 21, 0.2, -1.2, 1.9); g.stroke();                                   // ear
+    g.beginPath(); g.moveTo(196, 222); g.quadraticCurveTo(205, 217, 214, 222); g.stroke();                    // eye, looking down at the ball
+    g.lineWidth = 3.5; g.beginPath(); g.moveTo(190, 206); g.quadraticCurveTo(204, 200, 220, 204); g.stroke();  // a level, impartial brow
+    g.restore();
+    relief(() => { g.beginPath(); g.moveTo(232, 396); g.lineTo(208, 426); g.lineTo(258, 412); g.closePath(); g.moveTo(318, 396); g.lineTo(340, 426); g.lineTo(290, 412); g.closePath(); });   // collar
+    relief(() => { g.beginPath(); g.moveTo(274, 412); g.lineTo(246, 400); g.lineTo(250, 426); g.closePath(); g.moveTo(274, 412); g.lineTo(302, 400); g.lineTo(298, 426); g.closePath(); g.moveTo(283, 412); g.arc(274, 412, 8, 0, Math.PI * 2); }, '#d6dade');   // bow tie
+    // the gloved hand and the ball, in front of the chin
+    relief(() => { g.beginPath(); g.arc(150, 330, 24, 0, Math.PI * 2); });                                     // ball
+    relief(() => { g.beginPath(); g.moveTo(128, 350); g.bezierCurveTo(124, 372, 140, 392, 168, 392); g.bezierCurveTo(188, 392, 196, 372, 190, 352);
+      g.bezierCurveTo(186, 340, 176, 336, 170, 346); g.bezierCurveTo(160, 356, 140, 356, 128, 350); g.closePath(); }, '#f4f5f6');   // glove
+    g.save(); g.strokeStyle = 'rgba(70,74,80,0.6)'; g.lineWidth = 2; for (const x of [146, 158, 170]) { g.beginPath(); g.moveTo(x, 360); g.lineTo(x + 4, 384); g.stroke(); } g.restore();
+  } else if (heads) {
+    ringText('D. ROYLE · SNOOKER LEGEND', -Math.PI / 2);
+    // Declan in profile, facing left: slicked-back hair, a big chin, one eyebrow raised; bow tie and wing collar
+    const head = () => { g.beginPath();
+      g.moveTo(300, 402); g.bezierCurveTo(300, 370, 296, 345, 306, 318);
+      g.bezierCurveTo(336, 280, 338, 200, 306, 158); g.bezierCurveTo(282, 124, 228, 112, 192, 126);
+      g.bezierCurveTo(170, 134, 160, 150, 166, 168); g.lineTo(176, 192);
+      g.lineTo(170, 210); g.bezierCurveTo(160, 226, 146, 240, 150, 250); g.lineTo(170, 256);
+      g.lineTo(166, 270); g.lineTo(174, 278); g.lineTo(166, 288);
+      g.bezierCurveTo(150, 302, 152, 330, 176, 340); g.bezierCurveTo(206, 350, 226, 340, 238, 336);
+      g.bezierCurveTo(236, 360, 232, 380, 228, 402); g.closePath(); };
+    relief(head);
+    g.save(); g.strokeStyle = 'rgba(70,74,80,0.75)'; g.lineWidth = 3; g.lineCap = 'round';
+    for (let i = 0; i < 6; i++) { g.beginPath(); g.moveTo(178 + i * 6, 150 + i * 9); g.bezierCurveTo(230 + i * 4, 118 + i * 10, 290, 150 + i * 12, 318 - i * 3, 210 + i * 14); g.stroke(); }   // slicked hair
+    g.beginPath(); g.ellipse(276, 250, 14, 22, 0.2, -1.2, 1.9); g.stroke();                                   // ear
+    g.beginPath(); g.moveTo(186, 214); g.quadraticCurveTo(196, 208, 206, 214); g.stroke();                    // eye
+    g.lineWidth = 4; g.beginPath(); g.moveTo(178, 196); g.quadraticCurveTo(196, 176, 214, 190); g.stroke();   // the raised eyebrow
+    g.lineWidth = 2.5; g.beginPath(); g.moveTo(170, 300); g.quadraticCurveTo(186, 312, 206, 304); g.stroke();  // the chin's line
+    g.restore();
+    relief(() => { g.beginPath(); g.moveTo(222, 402); g.lineTo(196, 430); g.lineTo(250, 418); g.closePath(); g.moveTo(306, 402); g.lineTo(330, 432); g.lineTo(276, 418); g.closePath(); });   // wing collar
+    relief(() => { g.beginPath(); g.moveTo(263, 418); g.lineTo(232, 404); g.lineTo(236, 434); g.closePath(); g.moveTo(263, 418); g.lineTo(294, 404); g.lineTo(290, 434); g.closePath(); g.moveTo(272, 418); g.arc(263, 418, 9, 0, Math.PI * 2); }, '#d6dade');   // bow tie
+  } else {
+    ringText('DESK SNOOKER · FIFTEEN REDS', -Math.PI / 2);
+    // The triangle of reds, raised in the metal
+    const r = 15;
+    for (let row = 0; row < 5; row++) for (let i = 0; i <= row; i++) {
+      const x = C - row * r + i * 2 * r, y = 168 + row * r * 1.74;
+      relief(() => { g.beginPath(); g.arc(x, y, r - 1.5, 0, Math.PI * 2); });
+    }
+    relief(() => { g.beginPath(); g.moveTo(C - 98, 342); g.lineTo(C + 98, 342); g.lineTo(C + 98, 348); g.lineTo(C - 98, 348); g.closePath(); });
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+function coinEdge() {
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 32;
+  const g = c.getContext('2d'); g.fillStyle = '#c9a54e'; g.fillRect(0, 0, 1024, 32);
+  for (let x = 0; x < 1024; x += 4) { g.fillStyle = 'rgba(80,55,10,0.35)'; g.fillRect(x, 0, 1.5, 32); }    // milling
+  g.fillStyle = 'rgba(60,40,8,0.85)'; g.font = '700 20px Georgia, serif'; g.textBaseline = 'middle';
+  for (let x = 10; x < 1024; x += 340) g.fillText('ALL TO PLAY FOR ✦', x, 17);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const coin = (() => {
+  // (toned down: under the table's bright lights a fully shiny face washes out its relief)
+  const mk = map => new THREE.MeshStandardMaterial({ map, color: 0x8c8c8c, metalness: 0.35, roughness: 0.55, envMap: roomEnv, envMapIntensity: 0.6 });
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(COIN_R, COIN_R, COIN_T, 64), [mk(coinEdge()), mk(coinFace(true)), mk(coinFace(false))]);
+  m.visible = false; table.add(m);
+  return m;
+})();
+const toss = { active: false, phase: null, t: 0 };
+function hideCoin() { coin.visible = false; toss.active = false; toss.phase = null; orbit.minDistance = 0.4; }
+// Ask who calls: you (or Player 1 between two of you here)
+function startToss() {
+  const caller = 0, name = game.players[caller].name;
+  toss.active = true; toss.phase = 'call'; toss.caller = caller; coin.visible = false;
+  setChoice({ title: 'The toss', text: `${name === 'You' ? 'Call it' : name + ', call it'}: heads or tails?`, buttons: [
+    { t: 'Heads', act: () => flipCoin('heads') }, { t: 'Tails', act: () => flipCoin('tails') }] });
+}
+function flipCoin(call) {
+  setChoice(null);
+  Object.assign(toss, { phase: 'flip', call, result: Math.random() < 0.5 ? 'heads' : 'tails', t: 0, active: true });
+  // Somewhere you'll see it: on the cloth in front of you in the headset, otherwise in the middle of the D
+  let x = BAULK_X - D_R * 0.45, z = 0;
+  if (xrMode) {
+    const { pos } = headPose(); table.updateMatrixWorld();
+    const q = table.worldToLocal(pos.clone()); x = Math.max(-L / 2 + 0.25, Math.min(L / 2 - 0.25, q.x)); z = Math.max(-W / 2 + 0.25, Math.min(W / 2 - 0.25, q.z));
+  }
+  toss.x = x; toss.z = z; coin.visible = true;
+  setMessage(`${game.players[toss.caller].name === 'You' ? 'You call' : game.players[toss.caller].name + ' calls'} ${call}. The coin is in the air…`);
+  playClick(0.5, 'cue');
+}
+function updateToss(dt) {
+  if (!toss.active || toss.phase === 'call' || toss.phase === 'choose') return;
+  toss.t += dt;
+  const T = 0.62, peak = 0.45, y0 = COIN_T / 2;
+  if (toss.phase === 'flip') {
+    const u = Math.min(1, toss.t / T), h = 4 * peak * u * (1 - u);
+    const turns = 5 * Math.PI * 2 + (toss.result === 'tails' ? Math.PI : 0);
+    coin.position.set(toss.x, y0 + h, toss.z); coin.rotation.set(turns * (1 - Math.pow(1 - u, 1.6)), 0.4, 0);
+    if (!xrMode) {        // the view comes round to watch it
+      const w = table.localToWorld(new THREE.Vector3(toss.x, 0.05, toss.z)), from = camera.position.clone().sub(orbit.target).normalize();
+      orbit.target.lerp(w, Math.min(1, dt * 4)); camera.position.lerp(w.clone().addScaledVector(from, 0.7), Math.min(1, dt * 3)); desk.recentre = false;
+    }
+    if (u >= 1) { toss.phase = 'landed'; toss.t = 0; playClick(0.8, 'ball'); }
+    return;
+  }
+  if (toss.phase === 'landed' && !xrMode) {               // a close look at how it's landed
+    orbit.minDistance = 0.05;
+    const w = table.localToWorld(new THREE.Vector3(toss.x, 0, toss.z)), from = camera.position.clone().sub(orbit.target); from.y = 0; from.normalize();
+    orbit.target.lerp(w, Math.min(1, dt * 5)); camera.position.lerp(w.clone().addScaledVector(from, 0.012).add(new THREE.Vector3(0, 0.075, 0)), Math.min(1, dt * 4));
+  }
+  if (toss.phase === 'landed' && toss.t > 2.2) {
+    const winner = toss.call === toss.result ? toss.caller : 1 - toss.caller, w = game.players[winner], other = game.players[1 - winner];
+    const res = toss.result === 'heads' ? 'Heads' : 'Tails';
+    const breakBy = i => { match.breaker = i; hideCoin(); newFrame(); desk.recentre = true; setMessage(`${res}: ${w.name === 'You' ? 'you win' : w.name + ' wins'} the toss. ${game.players[i].name} to break. Cue ball in hand in the D.`); };
+    if (w.ai !== null && w.ai !== undefined) {
+      // The computer's choice: the stronger players like to break; the rest are happy to let you
+      const prof = AI_PLAYERS[w.ai], breaks = Math.random() < (prof.rating >= 1500 ? 0.55 : 0.35);
+      toss.phase = 'done'; breakBy(breaks ? winner : 1 - winner);
+    } else {
+      toss.phase = 'choose';
+      setChoice({ title: `${res}: ${w.name === 'You' ? 'you win' : w.name + ' wins'} the toss`, text: 'Break, or let your opponent break?', buttons: [
+        { t: w.name === 'You' ? 'I’ll break' : `${w.name} breaks`, act: () => { setChoice(null); breakBy(winner); } },
+        { t: `${other.name} breaks`, act: () => { setChoice(null); breakBy(1 - winner); } }] });
+    }
+  }
+}
+
+// =====================================================================
+//  Carrying on later: an unfinished match (against the computer, in the championship, or between two of you here)
+//  is saved on this device after every shot, in the browser's own storage (not a cookie: it never leaves the
+//  device), and you're offered it back when you next open the game.
+// =====================================================================
+const SAVE_KEY = 'desk-snooker-match', SAVE_V = 1;
+let lastSaveText = '', saveTimer = 0;
+function clearSave() { lastSaveText = ''; try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* storage blocked */ } }
+function loadSave() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if (!s || s.v !== SAVE_V || !['ai', 'two', 'champ'].includes(s.mode)) return null;
+    if (s.mode === 'champ' && (!champ || champ.champion !== null)) return null;
+    return s;
+  } catch (e) { return null; }
+}
+function autoSave(dt) {
+  if ((saveTimer += dt) < 1) return;
+  saveTimer = 0;
+  const mode = settings.mode;
+  if (!['ai', 'two', 'champ'].includes(mode)) return;
+  if (match.over) { if (lastSaveText) clearSave(); return; }
+  if (anyMoving() || shot || choice || toss.active || game.frameOver || referee.job) return;
+  const idx = b => (b ? balls.indexOf(b) : -1);
+  const data = { v: SAVE_V, mode, opponent: settings.opponent, reds: settings.reds, rules: settings.rules,
+    match: { bestOf: match.bestOf, frames: match.frames, breaker: match.breaker, stats: match.stats, log: match.log },
+    game: { players: game.players.map(p => ({ name: p.name, score: p.score, ai: p.ai, misses: p.misses || 0 })), current: game.current, ballOn: game.ballOn,
+      breakScore: game.breakScore, highBreak: game.highBreak, respotted: game.respotted, fstats: game.fstats,
+      freeBall: game.freeBall === true ? true : game.freeBall && game.freeBall.nominated ? { nominated: idx(game.freeBall.nominated) } : false, nominated: idx(game.nominated) },
+    balls: balls.map(b => [b.x, b.z, b.onTable ? 1 : 0]), ballInHand };
+  const text = JSON.stringify(data);
+  if (text === lastSaveText) return;
+  lastSaveText = text;
+  try { localStorage.setItem(SAVE_KEY, text); } catch (e) { /* storage blocked */ }
+}
+function offerResume(sv) {
+  const opp = sv.game.players[1] ? sv.game.players[1].name : '';
+  const vs = sv.mode === 'two' ? 'Player 1 v Player 2' : `against ${opp}`;
+  setChoice({ title: 'Carry on?', text: `You have an unfinished match ${vs}: frames ${sv.match.frames[0]}–${sv.match.frames[1]}, this frame ${sv.game.players[0].score}–${sv.game.players[1].score}.`, buttons: [
+    { t: 'Carry on with it', act: () => { setChoice(null); applySave(sv); } },
+    { t: 'Start afresh', act: () => { setChoice(null); clearSave(); startMatch(); } }] });
+}
+function applySave(sv) {
+  Object.assign(settings, { mode: sv.mode, opponent: sv.opponent, reds: sv.reds, rules: sv.rules }); saveSettings();
+  startMatch.noToss = true; startMatch(); startMatch.noToss = false;      // the right table and players, then...
+  Object.assign(match, { bestOf: sv.match.bestOf, frames: sv.match.frames, breaker: sv.match.breaker, stats: sv.match.stats || match.stats, log: sv.match.log || match.log, over: false });
+  sv.game.players.forEach((p, i) => Object.assign(game.players[i], p));
+  const g = sv.game;
+  Object.assign(game, { current: g.current, ballOn: g.ballOn, breakScore: g.breakScore, highBreak: g.highBreak, respotted: g.respotted, fstats: g.fstats || game.fstats,
+    freeBall: g.freeBall === true ? true : g.freeBall && g.freeBall.nominated >= 0 ? { nominated: balls[g.freeBall.nominated] } : false,
+    nominated: g.nominated >= 0 ? balls[g.nominated] : null, frameOver: false });
+  // ...the balls where they were (potted ones on the pockets' runners)
+  let k = 0;
+  sv.balls.forEach(([x, z, on], i) => { const b = balls[i]; b.place(x, z); if (!on) { b.onTable = false; toRunner(b, pockets[k++ % pockets.length]); } b.show(true); });
+  ballInHand = sv.ballInHand;
+  lastSaveText = JSON.stringify(sv);
+  setMessage(`Carrying on. ${game.players[game.current].name} to play${ballInHand ? ', cue ball in hand' : ''}. Ball on: ${ballOnText().toLowerCase()}.`);
+  if (typeof renderSettingsPanel === 'function') renderSettingsPanel();
+  refreshBoard();
 }
 
 function concedeFrame() {
@@ -3374,7 +3608,7 @@ function updateAI(dt) {
     if (opp.hold.t < 0.7 || anyMoving() || shot) return;
     opp.hold = null; aiCue.visible = false; opp.bridgeTip = null;
   }
-  if (!isAITurn() || anyMoving() || shot || choice) { if (!isAITurn()) aiCue.visible = false; return; }
+  if (!isAITurn() || anyMoving() || shot || choice || toss.active) { if (!isAITurn()) aiCue.visible = false; return; }
   if (refereeBusy()) return;                              // wait until the referee has finished at the runners
   const profile = AI_PLAYERS[game.players[game.current].ai];
   if (!ai.gen && !ai.plan) {
@@ -6100,6 +6334,8 @@ function loop(time) {
   updateRestRack();
   tidyRunners();
   updateReferee(dt);
+  updateToss(dt);
+  autoSave(dt);
   updateOpponent(dt);
   updateRoom(dt);
   netUpdate();
@@ -6137,7 +6373,12 @@ document.getElementById('toggle').addEventListener('click', e => {
 
 rebuildTable();
 if (settings.mode === 'champ' && (!champ || champ.champion !== null)) settings.mode = 'practice';
-startMatch();
+{
+  // An unfinished match saved on this device: offer to carry on with it
+  const saved = loadSave();
+  startMatch.noToss = !!saved; startMatch(); startMatch.noToss = false;
+  if (saved) offerResume(saved);
+}
 if (settings.mode === 'coach') startLesson(0);
 renderSettingsPanel();
 renderDraw();
@@ -6395,7 +6636,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
