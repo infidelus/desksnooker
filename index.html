@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 86;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 87;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4943,7 +4943,14 @@ function updateHeadsetCue(dt, now) {
   while (cueState.history.length > 2 && now - cueState.history[0].t > 0.06) cueState.history.shift();
   cueState.cooldown = Math.max(0, cueState.cooldown - dt);
 
-  if (cueState.locked && cueState.prevLocal && canShoot() && cueBall.onTable && cueState.cooldown === 0 && flat > 0.2) {
+  // When the game moves the cue ball (the balls put back after a miss, the cue ball placed after an in-off...) it can
+  // land on your cue while you're still following through. Nothing counts until you've drawn the cue back behind it.
+  const cbAt = new THREE.Vector3(cueBall.x, R, cueBall.z);
+  if (cueState.lastCB && cueBall.onTable && cueState.lastCB.distanceTo(cbAt) > 0.005 && !anyMoving() && !shot) cueState.mustClear = true;
+  cueState.lastCB = cbAt.clone();
+  if (cueState.mustClear && (!cueState.locked || tipLocal.distanceTo(cbAt) > R + 0.08)) cueState.mustClear = false;
+
+  if (cueState.locked && cueState.prevLocal && canShoot() && cueBall.onTable && cueState.cooldown === 0 && flat > 0.2 && !cueState.mustClear) {
     const hit = segmentHitsBall(cueState.prevLocal, tipLocal);
     if (hit) {
       const h0 = cueState.history[0];
@@ -4962,7 +4969,7 @@ function updateHeadsetCue(dt, now) {
       }
     }
   }
-  cueState.prevLocal = tipLocal;
+  cueState.prevLocal = tipLocal; cueState.tipLocal = tipLocal;
 }
 
 // Would this cue line (in the room) pass through a ball or the cushion on its way to the cue ball?
@@ -6843,7 +6850,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { canShootNow: () => canShoot(), checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
