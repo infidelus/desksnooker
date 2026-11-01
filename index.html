@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 89;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 90;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1675,6 +1675,18 @@ function playClick(speed, kind) {
   lastClick = now;
   const vol = Math.min(1, speed / 4);
   if (vol < 0.02) return;
+  if (kind === 'rest') {
+    // The rest's head set down on (or lifted off) the cloth: a soft, muffled tap
+    const len = 0.05;
+    const buf = audio.createBuffer(1, Math.floor(audio.sampleRate * len), audio.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (data.length * 0.1));
+    const src = audio.createBufferSource(); src.buffer = buf;
+    const lp = audio.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 0.7;
+    const g = audio.createGain(); g.gain.value = vol * 1.6;
+    src.connect(lp).connect(g).connect(audio.destination); src.start();
+    return;
+  }
   if (kind === 'ball' || kind === 'cue') {
     const len = 0.03;
     const buf = audio.createBuffer(1, Math.floor(audio.sampleRate * len), audio.sampleRate);
@@ -4763,6 +4775,7 @@ function updateHeadsetCue(dt, now) {
         if (g > -1 && g < 0.002 && tip.y <= g) {
           // It touches the cloth: the head stands there, the shaft flattening as it goes down
           rs.down = true;
+          playClick(1.4, 'rest'); pulse(bridgeHand, 0.5, 40);   // a soft tap as the head meets the cloth
           const fh = new THREE.Vector3(f.x, 0, f.z).normalize(), flat = Math.sqrt(Math.max(0, reach * reach - h.y * h.y));
           rs.head.set(h.x + fh.x * flat, 0, h.z + fh.z * flat);
         } else if (g > -1 && tip.y < g) rs.head.y = g;            // resting on the cushion or rail, not through it
@@ -4785,12 +4798,17 @@ function updateHeadsetCue(dt, now) {
           rs.turn = wrap(Math.atan2(rs.head.z - rs.hold.z, rs.head.x - rs.hold.x) - rs.yaw);
           rs.flat = Math.hypot(rs.head.x - rs.hold.x, rs.head.z - rs.hold.z);
         }
-        const ang = rs.yaw + rs.turn;
+        const ang = rs.yaw + rs.turn, px = rs.head.x, pz = rs.head.z;
         rs.head.x = rs.hold.x + Math.cos(ang) * rs.flat; rs.head.z = rs.hold.z + Math.sin(ang) * rs.flat;
+        // While the head slides over the cloth, a faint buzz in your hand, stronger the faster it goes
+        const sp = Math.hypot(rs.head.x - px, rs.head.z - pz) / Math.max(dt, 1e-3);
+        rs.buzzT = (rs.buzzT || 0) - dt;
+        if (sp > 0.03 && rs.buzzT <= 0) { pulse(bridgeHand, 0.35 + Math.min(0.35, sp * 0.5), 60); rs.buzzT = 0.05; }
         const above = tip.y - Math.max(0, g);
         rs.above = rs.above === undefined ? above : rs.above + (above - rs.above) * Math.min(1, dt * 5);
         if (rs.above > 0.12) {                                          // lifted clear, as your wrist tips it up
           rs.down = false; rs.hold = null; rs.above = undefined; rs.lift = 0; rs.yaw = rs.turn = rs.flat = undefined;
+          playClick(0.7, 'rest');                                       // (a lighter one as it comes off)
           rs.reach = holdAt(Math.hypot(rs.head.x - h.x, rs.head.z - h.z)); rs.head.copy(h).addScaledVector(f, rs.reach);
         }
         else {
