@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 75;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 76;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3578,7 +3578,7 @@ function placeCueBehindBall(c, dirX, dirZ, gap, side, height, elev = 0) {
   // On a rest, the cue lies in the rest's head, which stays on the cloth a fixed distance behind the ball (just behind
   // the tip as it's settled): striking higher or lower on the cue ball drops or raises the butt, pivoting on the rest
   const restKind = restsOn() && (c === cue || c === aiCue) ? reachNeed(balls, cueBall, dirX, dirZ) : 'none';
-  let e = Math.max(elev, 0.08);
+  let e = Math.max(elev, c === aiCue ? 0.11 : 0.08);      // (the computer's bridge stands a little higher)
   if (restKind !== 'none') {
     const back = (c === aiCue ? 0.03 : 0.01) + BRIDGE_BACK;
     e = Math.max(elev, Math.atan2(REST_INFO[restKind].head + 0.006 - (R + height * R), back));
@@ -5206,6 +5206,19 @@ function poseOppHands(tip, quat, bridgeTip) {
     br.root.position.sub(palm).applyQuaternion(q).add(palm);
     br.root.quaternion.premultiply(q);
   }
+  // Settle the cue in the V between thumb and forefinger: move the hand so the V sits right under the cue, the cue
+  // resting on it (but never so low that the palm goes into the cloth)
+  {
+    br.root.updateMatrixWorld(true);
+    const vee = br.bones['thumb-phalanx-proximal'].getWorldPosition(new THREE.Vector3()).add(br.bones['index-finger-phalanx-proximal'].getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+    const onCue = tip.clone().addScaledVector(dir, vee.clone().sub(tip).dot(dir));
+    const shift = onCue.addScaledVector(UP, -0.019).sub(vee);
+    const palmNow = new THREE.Vector3();
+    for (const n of ['index-finger-metacarpal', 'middle-finger-metacarpal', 'ring-finger-metacarpal', 'pinky-finger-metacarpal']) palmNow.add(br.bones[n].getWorldPosition(new THREE.Vector3()));
+    const palmY = palmNow.multiplyScalar(0.25).applyMatrix4(inv).y;
+    shift.y = Math.max(shift.y, base + 0.009 - palmY);
+    br.root.position.add(shift);
+  }
   keepHandOnTop(br);
 }
 function updateOpponent(dt) {
@@ -6385,7 +6398,7 @@ function settleNow() {
 window.snooker = { reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
-  hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy,
+  hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
   opp, handRigs, updateHands, cue, get choice() { return choice; }, chooseOption, snookeredOnAll, get champ() { return champ; }, newChampionship, frameWon, concedeFrame, menuCanvas: menu.c, boardCanvas: board.c, drawMenu, setMenuPage: p => { menuPage = p; drawMenu(); }, AI_PLAYERS, R, L, W,
 };
 </script>
