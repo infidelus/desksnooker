@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 81;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 82;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2733,10 +2733,24 @@ function updateToss(dt) {
     orbit.target.lerp(w, Math.min(1, dt * 5)); camera.position.lerp(w.clone().addScaledVector(from, 0.012).add(new THREE.Vector3(0, 0.075, 0)), Math.min(1, dt * 4));
   }
   if (toss.phase === 'landed' && !toss.called && toss.t > 0.5) { toss.called = true; initAudio(); say(toss.result); }   // the referee calls it
-  if (toss.phase === 'landed' && toss.t > 2.2) {
+  // On the computer: about five seconds' look at the coin, then the view pans back out over the table before the game
+  // starts (in the headset you just look down at it)
+  if (toss.phase === 'landed' && !xrMode && toss.t > 5) {
+    toss.phase = 'panout'; toss.t = 0; orbit.minDistance = 0.4;
+    toss.camFrom = camera.position.clone(); toss.tgtFrom = orbit.target.clone();
+  }
+  if (toss.phase === 'panout') {
+    table.updateMatrixWorld();
+    const u = Math.min(1, toss.t / 1.6), sm = u * u * (3 - 2 * u);
+    camera.position.copy(toss.camFrom).lerp(table.localToWorld(new THREE.Vector3(-3.4, 1.34, 1.4)), sm);   // the opening view, from behind baulk
+    orbit.target.copy(toss.tgtFrom).lerp(table.localToWorld(new THREE.Vector3(-0.5, 0, 0)), sm);
+    desk.recentre = false;
+    if (u < 1) return;
+  }
+  if ((toss.phase === 'landed' && xrMode && toss.t > 2.5) || (toss.phase === 'panout')) {
     const winner = toss.call === toss.result ? toss.caller : 1 - toss.caller, w = game.players[winner], other = game.players[1 - winner];
     const res = toss.result === 'heads' ? 'Heads' : 'Tails';
-    const breakBy = i => { match.breaker = i; hideCoin(); newFrame(); desk.recentre = true; setMessage(`${res}: ${w.name === 'You' ? 'you win' : w.name + ' wins'} the toss. ${game.players[i].name} to break. Cue ball in hand in the D.`); };
+    const breakBy = i => { match.breaker = i; hideCoin(); newFrame(); setMessage(`${res}: ${w.name === 'You' ? 'you win' : w.name + ' wins'} the toss. ${game.players[i].name} to break. Cue ball in hand in the D.`); };
     if (w.ai !== null && w.ai !== undefined) {
       // The computer's choice: the stronger players like to break; the rest are happy to let you
       const prof = AI_PLAYERS[w.ai], breaks = Math.random() < (prof.rating >= 1500 ? 0.55 : 0.35);
