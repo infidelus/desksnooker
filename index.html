@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 83;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 84;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -5543,20 +5543,11 @@ function poseOppHands(tip, quat, bridgeTip) {
   const palmL = palm.clone().applyMatrix4(inv);
   br.root.position.y += surface + 0.018 - palmL.y;
   palm.y += surface + 0.018 - palmL.y;
-  const tipBone = br.bones['middle-finger-tip'];
-  if (!under && tipBone && surface - base > 0.008) {
-    br.root.updateMatrixWorld(true);
-    const tip = tipBone.getWorldPosition(new THREE.Vector3()), drop = tip.clone().applyMatrix4(inv).y - (base + 0.008);
-    const v = tip.clone().sub(palm), len = v.length(); v.y = 0; v.normalize();
-    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3().crossVectors(UP, v).normalize(), Math.asin(Math.min(0.9, Math.max(0, drop / len))));
-    br.root.position.sub(palm).applyQuaternion(q).add(palm);
-    br.root.quaternion.premultiply(q);
-  }
   // Settle the cue in the V between thumb and forefinger: move the hand so the V sits right under the cue, the cue
   // resting on it (but never so low that the palm goes into the cloth)
+  const veeAt = () => { br.root.updateMatrixWorld(true); return br.bones['thumb-phalanx-proximal'].getWorldPosition(new THREE.Vector3()).add(br.bones['index-finger-phalanx-proximal'].getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5); };
   {
-    br.root.updateMatrixWorld(true);
-    const vee = br.bones['thumb-phalanx-proximal'].getWorldPosition(new THREE.Vector3()).add(br.bones['index-finger-phalanx-proximal'].getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+    const vee = veeAt();
     const onCue = tip.clone().addScaledVector(dir, vee.clone().sub(tip).dot(dir));
     const shift = onCue.addScaledVector(UP, -0.019).sub(vee);
     const palmNow = new THREE.Vector3();
@@ -5564,6 +5555,23 @@ function poseOppHands(tip, quat, bridgeTip) {
     const palmY = palmNow.multiplyScalar(0.25).applyMatrix4(inv).y;
     shift.y = Math.max(shift.y, base + 0.009 - palmY);
     br.root.position.add(shift);
+  }
+  // When the cue is high (over the rail, or over a ball), it's a raised bridge: the fingertips reach down to the
+  // surface, the hand tipping forward about the V so the cue stays sitting in it rather than running through the hand
+  const tipBone = br.bones['middle-finger-tip'];
+  if (!under && tipBone) {
+    const vee = veeAt(), tipW = tipBone.getWorldPosition(new THREE.Vector3());
+    const v = tipW.clone().sub(vee); const hv = v.clone(); hv.y = 0; hv.normalize();
+    const axis = new THREE.Vector3().crossVectors(UP, hv).normalize();
+    const target = tipW.y - (tipW.clone().applyMatrix4(inv).y - (surfaceUnder(tipW.clone().applyMatrix4(inv)) + 0.008));       // the surface under the fingertips, in world height
+    if (Math.abs(tipW.y - target) > 0.002) {
+      const sgn = v.clone().applyAxisAngle(axis, 0.1).y < v.y ? 1 : -1;               // (whichever way round tips the fingers down)
+      let lo = -0.6, hi = 1.2;                                                         // (a little back up if they've gone too low)
+      for (let k = 0; k < 20; k++) { const m = (lo + hi) / 2; if (vee.y + v.clone().applyAxisAngle(axis, sgn * m).y > target) lo = m; else hi = m; }
+      const q = new THREE.Quaternion().setFromAxisAngle(axis, sgn * lo);
+      br.root.position.sub(vee).applyQuaternion(q).add(vee);
+      br.root.quaternion.premultiply(q);
+    }
   }
   keepHandOnTop(br);
 }
