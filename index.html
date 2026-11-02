@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 94;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 95;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -5940,6 +5940,50 @@ function poseOppHands(tip, quat, bridgeTip) {
     }
   }
   keepHandOnTop(br);
+  // Last of all: nothing of the hand but the V may touch the cue. With the hand tipped forward, its heel and wrist
+  // come up, and if they're in line with the cue it runs through them: turn the hand about the V until they're clear.
+  {
+    const cueHits = () => {
+      br.root.updateMatrixWorld(true);
+      const pts = ['wrist', 'thumb-metacarpal', 'index-finger-metacarpal', 'middle-finger-metacarpal', 'ring-finger-metacarpal', 'pinky-finger-metacarpal', 'thumb-tip', 'thumb-phalanx-distal']
+        .filter(n => br.bones[n]).map(n => br.bones[n].getWorldPosition(new THREE.Vector3()));
+      const w = br.bones.wrist && br.bones['middle-finger-metacarpal'];
+      if (w) { const a = br.bones.wrist.getWorldPosition(new THREE.Vector3()), b = br.bones['middle-finger-metacarpal'].getWorldPosition(new THREE.Vector3()); pts.push(a.clone().addScaledVector(a.clone().sub(b), 0.6)); }   // (the end of the forearm)
+      let worst = 0;
+      for (const q of pts) {
+        const along = q.clone().sub(tip).dot(dir), onAxis = tip.clone().addScaledVector(dir, along);
+        const r = TIP_R + CUE_TAPER * Math.max(0, -along) + 0.012;               // the cue's thickness there, and the hand's
+        if (q.y > onAxis.y - 0.006) worst = Math.max(worst, r - q.distanceTo(onAxis));   // (the palm lying under the cue is as it should be)
+      }
+      return worst;
+    };
+    // (turning it about the V, and failing that sliding it to the side so the cue runs alongside it, as a bridge on
+    // the rail does: worked out once for each shot, not every frame as the cue moves back and forth)
+    const line = tip.clone().addScaledVector(dir, -tip.dot(dir));             // (the cue's line, the same however far it's drawn back)
+    const key = `${line.x.toFixed(3)},${line.y.toFixed(3)},${line.z.toFixed(3)},${dir.x.toFixed(3)},${dir.z.toFixed(3)},${from.x.toFixed(2)},${from.z.toFixed(2)}`;
+    let fix = opp.handFix && opp.handFix.key === key ? opp.handFix : null;
+    const vee = veeAt(), q0 = br.root.quaternion.clone(), p0 = br.root.position.clone();
+    const perp = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
+    const apply = (a, sh) => { const q = new THREE.Quaternion().setFromAxisAngle(UP, a); br.root.position.copy(p0).sub(vee).applyQuaternion(q).add(vee).addScaledVector(perp, sh); br.root.quaternion.copy(q0).premultiply(q); };
+    if (!fix) {
+      fix = { key, a: 0, sh: 0 };
+      if (cueHits() > 0) {
+        let best = null;
+        for (const sh of [0, 0.01, -0.01, 0.02, -0.02, 0.03, -0.03, 0.045, -0.045, 0.06, -0.06])
+          for (const a of [0, 0.12, -0.12, 0.24, -0.24, 0.36, -0.36, 0.5, -0.5]) {
+            apply(a, sh);
+            const h = cueHits(), score = h > 0 ? 100 + h : Math.abs(a) * 0.05 + Math.abs(sh);
+            if (!best || score < best.score) best = { a, sh, score };
+          }
+        fix.a = best.a; fix.sh = best.sh;
+      }
+      opp.handFix = fix;
+    }
+    if (fix.a || fix.sh) {
+      apply(fix.a, fix.sh);
+      keepHandOnTop(br);
+    }
+  }
 }
 function updateOpponent(dt) {
   if (!opp.rigs.right) return;
