@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 91;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 92;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1124,6 +1124,36 @@ const roomCanopy = makeCanopy(room);
 }
 
 // ---------- the trophy cabinet and pictures at the black end ----------
+// The plate on a trophy's plinth: the competition's name and its winners, the latest at the bottom (as many as fit)
+function drawHonoursPlate(c, title, list) {
+  const g = c.getContext('2d'), w = c.width, h = c.height;
+  const v = g.createLinearGradient(0, 0, w, h); v.addColorStop(0, '#d9b45e'); v.addColorStop(0.5, '#b8913c'); v.addColorStop(1, '#8e6c26');
+  g.fillStyle = v; g.fillRect(0, 0, w, h);
+  g.strokeStyle = '#5a4214'; g.lineWidth = 6; g.strokeRect(10, 10, w - 20, h - 20);
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  // (shrunk to fit the plate if need be)
+  const shown = list.slice(-4), engrave = (text, y, font) => { g.font = font; const fit = Math.min(1, (w - 60) / g.measureText(text).width); if (fit < 1) g.font = font.replace(/(\d+)px/, (m, n) => `${Math.floor(n * fit)}px`); g.fillStyle = 'rgba(255,240,200,0.5)'; g.fillText(text, w / 2 + 1, y + 1.5); g.fillStyle = '#3a2a0c'; g.fillText(text, w / 2, y); };
+  engrave(title.toUpperCase(), 44, '700 34px Georgia, serif');
+  g.fillStyle = '#5a4214'; g.fillRect(w / 2 - 120, 70, 240, 2);
+  shown.forEach(([y, name], i) => engrave(`${y}   ${name}`, 102 + i * 40, 'italic 32px Georgia, serif'));
+}
+// Your own championship wins, engraved on the championship cup in the cabinet (kept on this device)
+const HONOURS_KEY = 'desk-snooker-honours';
+let engraveChampionship = null;
+function championshipRoll() {
+  const base = [[1972, 'Declan Royle'], [1981, 'Vida Steves'], [2001, 'Lionel Van Sourin'], [2019, 'Lewis Ambrose']];
+  let mine = [];
+  try { mine = JSON.parse(localStorage.getItem(HONOURS_KEY) || '[]'); } catch (e) { /* none */ }
+  return base.concat(mine.map(m => [m.y, m.level === 'pro' ? 'infidelus (pro)' : 'infidelus']));
+}
+function addHonour(level) {
+  try {
+    const mine = JSON.parse(localStorage.getItem(HONOURS_KEY) || '[]');
+    mine.push({ y: new Date().getFullYear(), level });
+    localStorage.setItem(HONOURS_KEY, JSON.stringify(mine));
+  } catch (e) { /* storage blocked: it just isn't kept */ }
+  if (engraveChampionship) engraveChampionship(championshipRoll());
+}
 {
   const wx = ROOM_X, cw = 2.4, cd = 0.42, x0 = wx - cd / 2;
   const back = new THREE.Mesh(new THREE.PlaneGeometry(cw, 1.25), new THREE.MeshBasicMaterial({ map: paintTexture(64, 256, (g, w, h) => {
@@ -1142,21 +1172,57 @@ const roomCanopy = makeCanopy(room);
   const urnGeo = new THREE.LatheGeometry([[0, 0], [0.05, 0], [0.05, 0.02], [0.02, 0.05], [0.06, 0.12], [0.065, 0.2], [0.03, 0.26], [0.045, 0.29], [0.02, 0.33], [0, 0.34]].map(([r, y]) => new THREE.Vector2(r, y)), 24);
   const handleGeo = new THREE.TorusGeometry(0.05, 0.008, 6, 16, Math.PI);
   const plinthGeo = new THREE.BoxGeometry(0.12, 0.06, 0.12);
-  const trophy = (kind, metal, z, y, s) => {
+  // A small engraved brass plate on the front of each plinth: the competition and some of its winners
+  const plateMat = (c, t) => new THREE.MeshStandardMaterial({ map: t, roughness: 0.45, metalness: 0.35, envMap: roomEnv, envMapIntensity: 0.5 });
+  const trophy = (kind, metal, z, y, s, honours) => {
     const grp = new THREE.Group(); grp.position.set(x0 - 0.02, y, z); grp.scale.setScalar(s); room.add(grp);
     const pl = new THREE.Mesh(plinthGeo, M.black); pl.position.y = 0.03; grp.add(pl);
+    if (honours) {
+      const c = document.createElement('canvas'); c.width = 512; c.height = 256;
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(0.106, 0.053), plateMat(c, t));
+      m.rotation.y = -Math.PI / 2; m.position.set(-0.0605, 0.03, 0); m.userData.keep = true; m.userData.plate = honours.title; grp.add(m);
+      grp.userData.c = c; grp.userData.t = t;
+      drawHonoursPlate(c, honours.title, honours.winners); t.needsUpdate = true;
+    }
     const cup = new THREE.Mesh(kind === 'urn' ? urnGeo : cupGeo, metal); cup.position.y = 0.06; grp.add(cup);
     if (kind === 'cup') for (const sg of [1, -1]) { const hd = new THREE.Mesh(handleGeo, metal); hd.rotation.z = -sg * Math.PI / 2; hd.position.set(0, 0.25, sg * 0.1); grp.add(hd); }
+    return honours ? (list => { drawHonoursPlate(grp.userData.c, honours.title, list); grp.userData.t.needsUpdate = true; }) : null;
   };
-  const plate = (z, y) => {
+  const plate = (z, y, words) => {
     const d = cyl(0.13, 0.13, 0.012, M.silver, x0 + 0.06, y + 0.15, z, room, 32); d.rotation.z = Math.PI / 2;
     const c = cyl(0.07, 0.07, 0.014, M.gold, x0 + 0.055, y + 0.15, z, room, 24); c.rotation.z = Math.PI / 2;
+    // engraved round the rim
+    const t = paintTexture(1024, 1024, (g, w, h) => {
+      g.clearRect(0, 0, w, h); g.fillStyle = 'rgba(40,40,46,0.85)'; g.textBaseline = 'middle';
+      const r = w / 2 * 0.775, chars = [...words.toUpperCase()];
+      // (as large as will go once round the rim, leaving a small gap where it starts and ends)
+      g.font = '600 50px Georgia, serif';
+      const room = 2 * Math.PI * r * 0.95, natural = chars.reduce((a, ch) => a + g.measureText(ch).width + 3, 0);
+      g.font = `600 ${Math.floor(Math.min(50, 50 * room / natural))}px Georgia, serif`;
+      const widths = chars.map(ch => g.measureText(ch).width + 3), total = widths.reduce((a, b) => a + b, 0);
+      let a = -Math.PI / 2 - total / r / 2;
+      chars.forEach((ch, i) => { const mid = a + widths[i] / 2 / r;
+        g.save(); g.translate(w / 2 + Math.cos(mid) * r, h / 2 + Math.sin(mid) * r); g.rotate(mid + Math.PI / 2); g.textAlign = 'center'; g.fillText(ch, 0, 0); g.restore(); a += widths[i] / r; });
+    });
+    const e = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.26), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+    e.rotation.y = -Math.PI / 2; e.position.set(x0 + 0.06 - 0.0065, y + 0.15, z); e.userData.keep = true; e.userData.plate = 'salver'; room.add(e);
   };
   // (each shelf has about 39 cm of room: a cup stands 32 cm at full size, handles and all, and an urn 40 cm)
-  trophy('cup', M.gold, 0, 1.63, 1.1);
-  trophy('urn', M.silver, -0.7, 1.63, 0.85); trophy('urn', M.silver, 0.7, 1.63, 0.85);
-  plate(-0.4, 1.22); trophy('cup', M.silver, 0.1, 1.23, 1.0); plate(0.6, 1.22); trophy('cup', M.gold, -0.9, 1.23, 0.8);
-  trophy('urn', M.gold, -0.5, 0.83, 0.85); trophy('cup', M.gold, 0.25, 0.83, 1.05); trophy('cup', M.silver, 0.85, 0.83, 0.8); plate(-0.95, 0.82);
+  // The club's honours: its legend Declan Royle, the computer players, and the odd familiar name, rearranged
+  const H = (title, ...winners) => ({ title, winners });
+  engraveChampionship = trophy('cup', M.gold, 0, 1.63, 1.1, H('Desk Snooker Championship', [1972, 'Declan Royle'], [1981, 'Vida Steves'], [2001, 'Lionel Van Sourin'], [2019, 'Lewis Ambrose']));
+  trophy('urn', M.silver, -0.7, 1.63, 0.85, H("Founders' Vase", [1958, 'Declan Royle'], [1966, 'Owen Thackeray'], [1979, 'Neil Furness'], [1993, 'Marcus Vale']));
+  trophy('urn', M.silver, 0.7, 1.63, 0.85, H('Black Ball Trophy', [1985, 'Lorna Destiny'], [1997, 'Paddy Corrigan'], [2012, 'Tariq Haddad']));
+  plate(-0.4, 1.22, 'Pairs Champions · 1996 Tommy Moran & Kev Dunmore · 2015 Callum Fraine & Megan Tolley ·');
+  trophy('cup', M.silver, 0.1, 1.23, 1.0, H('Club Championship', [1987, 'Declan Royle'], [1994, 'Paddy Corrigan'], [2003, 'Ffion Pryce'], [2021, 'Lin Wei']));
+  plate(0.6, 1.22, 'Seniors Salver · 1990 Declan Royle · 2009 Owen Thackeray · 2024 Neil Furness ·');
+  trophy('cup', M.gold, -0.9, 1.23, 0.8, H('Highest Break', [1983, 'Declan Royle 147'], [1998, 'Marcus Vale 141'], [2016, 'Rhys Penhallow 139']));
+  trophy('urn', M.gold, -0.5, 0.83, 0.85, H('Masters Invitation', [1992, 'Alastair Grieve'], [2006, 'Josie Achterberg'], [2014, 'Megan Tolley']));
+  trophy('cup', M.gold, 0.25, 0.83, 1.05, H('Inter-Club League', [1975, 'Bob Ackland'], [1999, 'Imran Qadir'], [2010, 'Sanjay Bhalla'], [2023, 'Priya Lal']));
+  trophy('cup', M.silver, 0.85, 0.83, 0.8, H('Plate Competition', [1969, 'Dave Hart'], [1988, 'Gary Pike'], [2004, 'Tracy Gill'], [2017, 'Shirley Brooks']));
+  plate(-0.95, 0.82, 'Most Improved Player · 2011 Callum Fraine · 2022 Tommy Moran ·');
+  engraveChampionship(championshipRoll());
   const cabGlow = lightPool(1.6, 1.0, 0xffd9a0, 0.3); cabGlow.rotation.x = -Math.PI / 2; cabGlow.position.set(wx - 0.9, 0.005, 0); room.add(cabGlow);
   // Framed pictures either side
   const picture = (z, draw) => {
@@ -3188,7 +3254,7 @@ function newChampionship() {
   const you = entrants.findIndex(e => e.ai === null);
   const first = [];
   for (let i = 0; i < size; i += 2) first.push({ a: i, b: i + 1, fa: 0, fb: 0, winner: null });
-  champ = { size, entrants, you, round: 0, rounds: [first], champion: null, curFrames: [0, 0], length: settings.champLength };
+  champ = { size, entrants, you, round: 0, rounds: [first], champion: null, curFrames: [0, 0], length: settings.champLength, level: settings.champLevel };
   saveChamp();
   settings.mode = 'champ'; saveSettings();
   startMatch();
@@ -3234,7 +3300,7 @@ function champRecordResult(w, msg) {
   champFinishRound();
   if (!youWon) while (champ.champion === null) champFinishRound();
   saveChamp(); renderDraw();
-  if (champ.champion === champ.you) { showTrophy(); return `${msg} You are the champion!`; }
+  if (champ.champion === champ.you) { showTrophy(); addHonour(champ.level || settings.champLevel); return `${msg} You are the champion!`; }
   if (!youWon) return `${msg} You're out. ${champ.entrants[champ.champion].name} won the championship.`;
   const next = champMatch();
   const opp = champ.entrants[next.a === champ.you ? next.b : next.a].name;
@@ -6916,7 +6982,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
