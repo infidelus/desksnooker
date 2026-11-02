@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 92;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 93;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1072,19 +1072,96 @@ const roomCanopy = makeCanopy(room);
   box(bl + 0.04, 0.04, 0.48, M.darkWood, bx, 0.97, wallZ + 0.24);
   const mirror = new THREE.Mesh(new THREE.PlaneGeometry(bl - 0.2, 1.05), new THREE.MeshStandardMaterial({ color: 0x5a5a5a, roughness: 0.08, metalness: 1, envMap: roomEnv }));
   mirror.position.set(bx, 1.55, wallZ + 0.012); room.add(mirror);
-  for (const y of [1.33, 1.71]) box(bl - 0.2, 0.025, 0.22, M.darkWood, bx, y, wallZ + 0.12);
-  const prof = [[0, 0], [0.036, 0], [0.038, 0.01], [0.038, 0.19], [0.03, 0.22], [0.014, 0.25], [0.012, 0.31], [0.014, 0.315], [0, 0.315]].map(([r, y]) => new THREE.Vector2(r, y));
-  const bottleGeo = new THREE.LatheGeometry(prof, 12);
-  const spots = [];
-  for (const [y, z] of [[0.99, wallZ + 0.3], [1.345, wallZ + 0.12], [1.725, wallZ + 0.12]]) for (let x = bx - bl / 2 + 0.2; x < bx + bl / 2 - 0.2; x += 0.1 + rnd() * 0.05) spots.push([x, y, z]);
-  const bottles = new THREE.InstancedMesh(bottleGeo, new THREE.MeshStandardMaterial({ roughness: 0.12, metalness: 0.1, transparent: true, opacity: 0.88, envMap: roomEnv }), spots.length);
-  const tint = [0x6b3a10, 0x1f4a20, 0x8a6a2a, 0xc9d6c9, 0x3a1a30, 0x7a2a10, 0x204050];
-  const mtx = new THREE.Matrix4();
-  spots.forEach(([x, y, z], i) => {
-    const s = 0.8 + rnd() * 0.45; mtx.makeScale(s, s * (0.85 + rnd() * 0.3), s).setPosition(x, y, z);
-    bottles.setMatrixAt(i, mtx); bottles.setColorAt(i, new THREE.Color(tint[Math.floor(rnd() * tint.length)]));
+  box(bl - 0.2, 0.025, 0.22, M.darkWood, bx, 1.71, wallZ + 0.12);
+  // Bottles of three shapes, each with its label (the club's own, mostly in poor taste), on the back counter and the
+  // top shelf, and spirits upside down on optics between
+  const V2 = (pts) => pts.map(([r, y]) => new THREE.Vector2(r, y));
+  const SHAPES = {
+    spirit: { geo: new THREE.LatheGeometry(V2([[0, 0], [0.036, 0], [0.038, 0.01], [0.038, 0.19], [0.03, 0.22], [0.014, 0.25], [0.012, 0.31], [0.014, 0.315], [0, 0.315]]), 14), r: 0.0386, y0: 0.05, y1: 0.17 },
+    wine: { geo: new THREE.LatheGeometry(V2([[0, 0], [0.036, 0], [0.037, 0.01], [0.037, 0.2], [0.03, 0.24], [0.014, 0.27], [0.013, 0.33], [0.015, 0.335], [0, 0.335]]), 14), r: 0.0376, y0: 0.05, y1: 0.15 },
+    whisky: { geo: new THREE.LatheGeometry(V2([[0, 0], [0.045, 0], [0.046, 0.01], [0.046, 0.15], [0.035, 0.18], [0.016, 0.2], [0.015, 0.25], [0.018, 0.255], [0, 0.255]]), 14), r: 0.0466, y0: 0.03, y1: 0.125 },
+  };
+  // name, what it is, shape, glass, label paper and ink
+  const LABELS = [
+    ['Pot Black', 'Dark Rum', 'spirit', 0x3a1a10, '#111111', '#e0b45a'],
+    ['Cue Tip', 'London Dry Gin', 'spirit', 0x9fb4b8, '#f4f1e6', '#1d4a8a'],
+    ['Pink Spot', 'Pink Gin', 'spirit', 0xe8b0c0, '#f6c6d4', '#7a1030'],
+    ['Old Baulk', '12 Year Whisky', 'whisky', 0x8a5a20, '#efe2c0', '#4a2a10'],
+    ['Maximum', '147 Vodka', 'spirit', 0xa8b8bc, '#ffffff', '#c01818'],
+    ['Double Kiss', 'Prosecco', 'wine', 0x2a4a20, '#d8b860', '#141414'],
+    ['Long Rest', 'Tawny Port', 'wine', 0x2a0c10, '#5a0c18', '#e0c070'],
+    ['The Plant', 'Single Malt', 'whisky', 0x6b4010, '#1d4a2a', '#efe2c0'],
+    ['Snooker Loopy', 'Liqueur', 'spirit', 0x4a2050, '#f2d23a', '#4a1a60'],
+    ['Red Ball', 'Vodka', 'spirit', 0xa8b8bc, '#c01818', '#ffffff'],
+    ['Free Ball', 'Brandy', 'whisky', 0x7a3a10, '#14204a', '#e0b45a'],
+    ['Safety Shot', 'Fino Sherry', 'wine', 0x3a1a08, '#f0e6cc', '#a01818'],
+    ['In-Off', 'Spiced Rum', 'spirit', 0x5a2a08, '#e07a20', '#141414'],
+    ['Kick', 'Tequila', 'spirit', 0xb0b890, '#a8d040', '#141414'],
+  ];
+  const labelMat = ([name, what, , , paper, ink]) => new THREE.MeshLambertMaterial({ alphaTest: 0.5, transparent: false, map: paintTexture(512, 128, (g, w, h) => {
+    // (the label wraps the bottle: only the middle of the canvas, the front, is printed)
+    g.clearRect(0, 0, w, h);
+    const lx = w * 0.3, lw = w * 0.4;
+    g.fillStyle = paper; g.fillRect(lx, 0, lw, h);
+    g.strokeStyle = ink; g.lineWidth = 3; g.strokeRect(lx + 6, 6, lw - 12, h - 12);
+    g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const fit = (t, size, font) => { g.font = `${font} ${size}px Georgia, serif`; const k = Math.min(1, (lw - 24) / g.measureText(t).width); g.font = `${font} ${Math.floor(size * k)}px Georgia, serif`; };
+    fit(name.toUpperCase(), 40, '700'); g.fillText(name.toUpperCase(), w / 2, h * 0.38);
+    fit(what, 26, 'italic'); g.fillText(what, w / 2, h * 0.72);
+  }) });
+  // Where they stand: the back counter and the top shelf (upright), and the optics (upside down)
+  const glassMat = new THREE.MeshStandardMaterial({ roughness: 0.12, metalness: 0.1, transparent: true, opacity: 0.88, envMap: roomEnv });
+  const placed = LABELS.map(() => []);
+  for (const [y, z] of [[0.99, wallZ + 0.3], [1.725, wallZ + 0.12]]) for (let x = bx - bl / 2 + 0.2; x < bx + bl / 2 - 0.2; x += 0.1 + rnd() * 0.04) {
+    const k = Math.floor(rnd() * LABELS.length), sc = 0.92 + rnd() * 0.16;
+    placed[k].push(new THREE.Matrix4().makeRotationY((rnd() - 0.5) * 0.5).scale(new THREE.Vector3(sc, sc, sc)).setPosition(x, y, z));
+  }
+  // The optics: a rail on the mirror, the spirit bottles hanging upside down from it into their measures
+  const optY = 1.62, optZ = wallZ + 0.08, optics = [];
+  box(2.6, 0.04, 0.05, M.darkWood, bx, optY + 0.02, optZ - 0.045);
+  const spiritsOnly = LABELS.map((l, i) => i).filter(i => LABELS[i][2] === 'spirit');
+  for (let i = 0; i < 12; i++) {
+    const x = bx - 1.21 + i * 0.22, k = spiritsOnly[i % spiritsOnly.length];
+    placed[k].push(new THREE.Matrix4().makeRotationZ(Math.PI).setPosition(x, optY, optZ));   // (upside down, label still facing you)
+    optics.push(x);
+  }
+  const optGlass = new THREE.MeshStandardMaterial({ color: 0xe8f0f0, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.45, envMap: roomEnv });
+  const optWhite = new THREE.MeshLambertMaterial({ color: 0xe8e8e0 });
+  for (const x of optics) {
+    cyl(0.016, 0.016, 0.012, M.silver, x, optY - 0.317, optZ);                 // collar on the bottle's neck
+    cyl(0.021, 0.021, 0.055, optGlass, x, optY - 0.352, optZ);                  // the measure
+    cyl(0.012, 0.008, 0.03, optWhite, x, optY - 0.395, optZ);                   // the spout
+    box(0.034, 0.01, 0.03, optWhite, x, optY - 0.383, optZ + 0.02);            // the lever you push the glass against
+    box(0.012, 0.06, 0.012, M.darkWood, x, optY + 0.0, optZ - 0.03);           // its bracket
+  }
+  for (const shape of Object.keys(SHAPES)) {
+    const list = []; LABELS.forEach((l, k) => { if (l[2] === shape) placed[k].forEach(m => list.push([m, l[3]])); });
+    if (!list.length) continue;
+    const im = new THREE.InstancedMesh(SHAPES[shape].geo, glassMat, list.length);
+    list.forEach(([m, c], i) => { im.setMatrixAt(i, m); im.setColorAt(i, new THREE.Color(c)); });
+    room.add(im);
+  }
+  LABELS.forEach((l, k) => {
+    if (!placed[k].length) return;
+    const sh = SHAPES[l[2]], band = new THREE.CylinderGeometry(sh.r, sh.r, sh.y1 - sh.y0, 20, 1, true, Math.PI, Math.PI * 2).translate(0, (sh.y0 + sh.y1) / 2, 0);
+    const im = new THREE.InstancedMesh(band, labelMat(l), placed[k].length);
+    placed[k].forEach((m, i) => im.setMatrixAt(i, m));
+    room.add(im);
   });
-  room.add(bottles);
+  // A chalkboard of snacks, propped on the back counter
+  {
+    const t = paintTexture(512, 640, (g, w, h) => {
+      g.fillStyle = '#1c2220'; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(255,255,255,${0.02 + Math.random() * 0.03})`; g.fillRect(Math.random() * w, Math.random() * h, 30 + Math.random() * 60, 2); }
+      g.fillStyle = '#f2efe4'; g.textAlign = 'center'; g.font = '700 64px "Comic Sans MS", "Chalkboard", cursive'; g.fillText('Snacks', w / 2, 80);
+      g.font = '34px "Comic Sans MS", "Chalkboard", cursive'; g.textAlign = 'left';
+      ['Chalk & Vinegar Crisps', 'Pork Scratchings', '  (cushion tested)', 'Scotch Egg on its Spot', 'Pickled Onions, potted', 'Cheese & Pink Ball Pickle', 'Black Pudding of the Day'].forEach((t, i) => g.fillText(t, 36, 160 + i * 62));
+      g.fillStyle = '#f2c84a'; g.textAlign = 'center'; g.font = '700 38px "Comic Sans MS", cursive'; g.fillText('No chalk in the pickled eggs', w / 2, 610);
+    });
+    const fr = new THREE.Group(); fr.position.set(bx - bl / 2 + 0.36, 0.99, wallZ + 0.16); fr.rotation.x = -0.12; room.add(fr);
+    box(0.42, 0.52, 0.025, M.darkWood, 0, 0.26, 0, fr);
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(0.37, 0.47), new THREE.MeshLambertMaterial({ map: t })); face.position.set(0, 0.26, 0.0135); fr.add(face);
+  }
   const shelfGlow = lightPool(bl, 0.9, 0xffb870, 0.35); shelfGlow.position.set(bx, 1.6, wallZ + 0.02); room.add(shelfGlow);
   const signTex = paintTexture(1024, 200, (g, w, h) => {
     g.fillStyle = '#120806'; g.fillRect(0, 0, w, h);
@@ -1101,12 +1178,75 @@ const roomCanopy = makeCanopy(room);
   box(bl + 0.1, 0.05, 0.7, M.darkWood, bx, 1.075, cz + 0.02);
   cyl(0.022, 0.022, bl, M.brass, bx, 0.2, cz + 0.42).rotation.z = Math.PI / 2;
   for (const x of [bx - bl / 2 + 0.3, bx, bx + bl / 2 - 0.3]) cyl(0.012, 0.012, 0.2, M.brass, x, 0.1, cz + 0.4);
-  [0xc03020, 0xe0c060, 0x203060].forEach((c, i) => {
-    const x = bx - 0.4 + i * 0.25;
-    cyl(0.03, 0.035, 0.12, M.brass, x, 1.16, cz - 0.15);
-    cyl(0.012, 0.015, 0.26, M.black, x, 1.35, cz - 0.15);
-    box(0.05, 0.07, 0.015, new THREE.MeshLambertMaterial({ color: c }), x, 1.4, cz - 0.135);
+  // Hand pumps for the real ales, each with its pump clip facing you; a T-bar font for the keg beers with lit badges;
+  // and the glowing cola font
+  const top = 1.1, pz = cz - 0.14;
+  const gloss = new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.15, metalness: 0.2, envMap: roomEnv });
+  const handleGeo = new THREE.LatheGeometry(V2([[0, 0], [0.014, 0], [0.016, 0.04], [0.019, 0.13], [0.024, 0.2], [0.021, 0.23], [0.008, 0.245], [0, 0.247]]), 16);
+  const clipTex = (title, sub, abv, bg, ink, shape) => paintTexture(192, 288, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = bg; g.strokeStyle = ink; g.lineWidth = 8;
+    g.beginPath();
+    if (shape === 'oval') g.ellipse(w / 2, h / 2, w / 2 - 6, h / 2 - 6, 0, 0, Math.PI * 2);
+    else { g.moveTo(8, 8); g.lineTo(w - 8, 8); g.lineTo(w - 8, h * 0.62); g.quadraticCurveTo(w - 8, h - 30, w / 2, h - 8); g.quadraticCurveTo(8, h - 30, 8, h * 0.62); g.closePath(); }
+    g.fill(); g.stroke();
+    g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const words = title.toUpperCase().split(' ');
+    const fit = (t, size, font, max) => { g.font = `${font} ${size}px Georgia, serif`; const k = Math.min(1, max / g.measureText(t).width); g.font = `${font} ${Math.floor(size * k)}px Georgia, serif`; };
+    words.forEach((t, i) => { fit(t, 44, '800', w - 44); g.fillText(t, w / 2, h * 0.3 + (i - (words.length - 1) / 2) * 46); });
+    fit(sub, 22, 'italic', w - 50); g.fillText(sub, w / 2, h * 0.62);
+    fit(abv, 26, '700', w - 60); g.fillText(abv, w / 2, h * 0.75);
   });
+  const ales = [
+    ['Red Ball', 'Best Bitter', '4.2%', '#b8141a', '#f6e6c0', 'shield'],
+    ['Long Pot', 'House Ale', '3.8%', '#d8b048', '#2a1608', 'oval'],
+    ['Pot Black', 'Stout', '4.8%', '#121212', '#e0b45a', 'shield'],
+    ['Foul & a Miss', 'Dark Mild', '3.4%', '#5a3214', '#f2e2c0', 'oval'],
+    ['Maximum', 'Strong Ale · 147 brews', '6.0%', '#f2ead0', '#7a1010', 'shield'],
+  ];
+  box(0.8, 0.012, 0.13, M.brass, bx - 0.86, top + 0.006, pz);                  // the drip tray
+  ales.forEach(([t, sub, abv, bg, ink, shape], i) => {
+    const x = bx - 1.18 + i * 0.16;
+    cyl(0.026, 0.032, 0.06, M.brass, x, top + 0.03, pz);
+    cyl(0.018, 0.018, 0.03, M.brass, x, top + 0.075, pz);
+    const h = new THREE.Mesh(handleGeo, gloss); h.position.set(x, top + 0.088, pz); h.rotation.x = -0.12; room.add(h);
+    const clip = new THREE.Mesh(new THREE.PlaneGeometry(0.064, 0.096), new THREE.MeshLambertMaterial({ map: clipTex(t, sub, abv, bg, ink, shape), alphaTest: 0.5 }));
+    clip.position.set(x, top + 0.24, pz + 0.006); clip.rotation.x = -0.12; room.add(clip);
+  });
+  // The T-bar keg font: a brass pillar and crossbar, three lit lens badges and their taps
+  {
+    const fx = bx + 0.25;
+    cyl(0.022, 0.03, 0.26, M.brass, fx, top + 0.13, pz);
+    const bar = cyl(0.026, 0.026, 0.42, M.brass, fx, top + 0.27, pz); bar.rotation.z = Math.PI / 2;
+    box(0.5, 0.012, 0.13, M.brass, fx, top + 0.006, pz);
+    [['Plant', 'Lager', '#e8c040', '#14204a'], ['Kiss', 'Cider', '#2a8a3a', '#f6f0d0'], ['Snookered', 'Stout', '#141414', '#e0c070']].forEach(([a, b, bg, ink], i) => {
+      const x = fx - 0.14 + i * 0.14;
+      const t = paintTexture(160, 160, (g, w, h) => {
+        g.fillStyle = bg; g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 2, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = ink; g.lineWidth = 6; g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 12, 0, Math.PI * 2); g.stroke();
+        g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.font = '800 36px Georgia, serif'; const k = Math.min(1, (w - 40) / g.measureText(a.toUpperCase()).width); g.font = `800 ${Math.floor(36 * k)}px Georgia, serif`; g.fillText(a.toUpperCase(), w / 2, h * 0.42);
+        g.font = 'italic 24px Georgia, serif'; g.fillText(b, w / 2, h * 0.66);
+      });
+      const badge = new THREE.Mesh(new THREE.CircleGeometry(0.036, 24), new THREE.MeshBasicMaterial({ map: t, color: 0xdddddd })); badge.position.set(x, top + 0.27, pz + 0.032); room.add(badge);
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.037, 0.005, 6, 24), M.brass); rim.position.set(x, top + 0.27, pz + 0.03); room.add(rim);
+      cyl(0.008, 0.006, 0.07, M.silver, x, top + 0.2, pz + 0.02);              // the tap
+      box(0.012, 0.05, 0.012, M.black, x, top + 0.335, pz + 0.01);             // its handle
+    });
+  }
+  // The cola font, lit from inside
+  {
+    const fx = bx + 0.85;
+    const t = paintTexture(160, 320, (g, w, h) => {
+      const v = g.createLinearGradient(0, 0, w, 0); v.addColorStop(0, '#5a0000'); v.addColorStop(0.5, '#e01818'); v.addColorStop(1, '#5a0000');
+      g.fillStyle = v; g.fillRect(0, 0, w, h);
+      g.save(); g.translate(w / 2, h / 2); g.rotate(-Math.PI / 2); g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = 'italic 700 58px Georgia, serif'; g.fillText('Cannon', 0, -24); g.font = 'italic 40px Georgia, serif'; g.fillText('Cola', 0, 30); g.restore();
+    });
+    box(0.15, 0.3, 0.09, new THREE.MeshStandardMaterial({ color: 0x2a2a2e, roughness: 0.3, metalness: 0.7, envMap: roomEnv }), fx, top + 0.15, pz);
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.25), new THREE.MeshBasicMaterial({ map: t })); face.position.set(fx, top + 0.16, pz + 0.0455); room.add(face);
+    box(0.17, 0.012, 0.12, M.brass, fx, top + 0.006, pz);
+  }
   for (const x of [bx - 1.3, bx, bx + 1.3]) {
     cyl(0.004, 0.004, ROOM_H - 2.2, M.black, x, (ROOM_H + 2.2) / 2, cz);
     cyl(0.04, 0.16, 0.18, new THREE.MeshLambertMaterial({ color: 0x0e3a24, side: THREE.DoubleSide }), x, 2.15, cz, room, 20, true);
