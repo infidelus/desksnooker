@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 95;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 96;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3521,6 +3521,29 @@ function pathClear(list, x0, z0, x1, z1, skip, clearance) {
   return true;
 }
 
+// Would a ball rolling from (x0, z0) to (x1, z1) clear the cushion noses and the pocket jaws? (A cue ball down in
+// the mouth of a pocket can have a jaw between it and a ball it otherwise sees.) Its first few millimetres don't
+// count, so a ball resting against a cushion can still roll away along it.
+function cushionsClear(x0, z0, x1, z1) {
+  let ex = x1 - x0, ez = z1 - z0; const len = Math.hypot(ex, ez);
+  if (len < 0.01) return true;
+  ex /= len; ez /= len;
+  const ax = x0 + ex * 0.005, az = z0 + ez * 0.005, bx = x1, bz = z1;
+  const ptSeg = (px, pz, qx, qz, vx, vz, l2) => { const t = Math.max(0, Math.min(1, ((px - qx) * vx + (pz - qz) * vz) / (l2 || 1e-12))); return Math.hypot(px - qx - vx * t, pz - qz - vz * t); };
+  const cross = (ux, uz, vx, vz) => ux * vz - uz * vx;
+  for (const sg of segs) {
+    const px = bx - ax, pz = bz - az, pl2 = px * px + pz * pz;
+    // the two segments cross, or come within a ball's radius of each other
+    const d1 = cross(px, pz, sg.ax - ax, sg.az - az), d2 = cross(px, pz, sg.ax + sg.ex - ax, sg.az + sg.ez - az);
+    const d3 = cross(sg.ex, sg.ez, ax - sg.ax, az - sg.az), d4 = cross(sg.ex, sg.ez, bx - sg.ax, bz - sg.az);
+    if (d1 * d2 < 0 && d3 * d4 < 0) return false;
+    const m = Math.min(ptSeg(ax, az, sg.ax, sg.az, sg.ex, sg.ez, sg.len2), ptSeg(bx, bz, sg.ax, sg.az, sg.ex, sg.ez, sg.len2),
+      ptSeg(sg.ax, sg.az, ax, az, px, pz, pl2), ptSeg(sg.ax + sg.ex, sg.az + sg.ez, ax, az, px, pz, pl2));
+    if (m < R - 0.001) return false;
+  }
+  return true;
+}
+
 // Every straight pot available, with an estimated chance of success for a
 // player whose typical aiming error is `sigma` radians.
 function potOptions(list, pred, sigma) {
@@ -3551,6 +3574,7 @@ function potOptions(list, pred, sigma) {
       const cosT = ax * ux + az * uz;
       if (cosT < 0.17) continue;
       if (!pathClear(list, cue.x, cue.z, gx, gz, [cue, t], 2 * R - 0.0005)) continue;
+      if (!cushionsClear(cue.x, cue.z, gx, gz)) continue;                    // (a jaw in the way)
       if (!hanging && !pathClear(list, t.x, t.z, aimX, aimZ, [cue, t], 2 * R - 0.0005)) continue;
       const sigLat = sigma * (d2 * d1 / (2 * R * cosT) + 0.3 * d1) + 0.002;
       let prob = erf(w / (sigLat * Math.SQRT2));
@@ -3570,7 +3594,7 @@ function potSpeed(o) {
 }
 
 // Can the cue ball hit any ball on directly (any part of it)?
-function canHitDirect(list, pred) {
+function canHitDirect(list, pred, withCushions = false) {
   const cue = list[0];
   for (let i = 1; i < list.length; i++) {
     const t = list[i];
@@ -3580,7 +3604,7 @@ function canHitDirect(list, pred) {
     for (const off of [0, 0.9, -0.9, 0.5, -0.5]) {
       const tx = t.x + px * off * 2 * R - dx / d * Math.sqrt(Math.max(0, 1 - off * off)) * 2 * R;
       const tz = t.z + pz * off * 2 * R - dz / d * Math.sqrt(Math.max(0, 1 - off * off)) * 2 * R;
-      if (pathClear(list, cue.x, cue.z, tx, tz, [cue, t], 2 * R - 0.0005)) return true;
+      if (pathClear(list, cue.x, cue.z, tx, tz, [cue, t], 2 * R - 0.0005) && (!withCushions || cushionsClear(cue.x, cue.z, tx, tz))) return true;
     }
   }
   return false;
@@ -3769,13 +3793,23 @@ function* aiThink(profile) {
   // Weak players just have a go at the easiest-looking pot, even if the trial run missed
   const triable = options.filter(o => !o.fouled);
   if (!best && triable.length && profile.safety === 0) {
-    const o = triable[0];
-    best = { score: o.p, p: o.p, dirX: o.dirX, dirZ: o.dirZ, speed: Math.min(7, potSpeed(o) * profile.speeds[0]), side: 0, height: 0, kind: 'pot' };
+    // A player with no safety game just has a go at the likeliest pot, as long as it's a fair shot (checked at the
+    // real table's fine step: the quick look can be too kind where the cue ball is in among the jaws)
+    for (const o of triable) {
+      const speed = Math.min(7, potSpeed(o) * profile.speeds[0]);
+      const sim = simulate(base, o.dirX, o.dirZ, speed, 0, 0, false, 0, SUBSTEP);
+      yield;
+      const cueP = sim.ctx.potted.some(b => b.kind === 'cue');
+      if (rule(sim, sim.ctx.potted.filter(b => b.kind !== 'cue'), cueP).foul) continue;
+      best = { score: o.p, p: o.p, dirX: o.dirX, dirZ: o.dirZ, speed, side: 0, height: 0, kind: 'pot' };
+      break;
+    }
   }
   if (best && (best.p >= profile.attack || profile.safety === 0)) return { ...best, placed };
 
   // 2. Safety (or escape if snookered)
-  const snookered = touchIdx > 0 ? false : !canHitDirect(base, pred);
+  // (for the computer's purposes, a jaw in the way is as good as a snooker: it has to find a way round it)
+  const snookered = touchIdx > 0 ? false : !canHitDirect(base, pred, true);
   let safe = null;
   // Nobody plays the cue ball into the cushion it's resting against
   const intoOwnCushion = (dirX, dirZ) => {
@@ -4082,6 +4116,7 @@ function updateAI(dt) {
     // (how exactly the tip finds the spot it was meant for: the better the player, the more exactly)
     const side = p.side + gauss() * (0.006 + profile.aim * 0.1), height = p.height + gauss() * (0.008 + profile.aim * 0.13);
     ai.lastShot = { x: cueBall.x, z: cueBall.z, a: Math.atan2(p.dirZ, p.dirX) };
+    if (window.__aiLog) window.__aiLog.push({ kind: p.kind, deg: Math.round(Math.atan2(p.dirZ, p.dirX) * 180 / Math.PI), speed: +p.speed.toFixed(2) });   // (for the tests)
     // With a colour on, the computer nominates the one it's playing (only said aloud when it's snookered)
     if (game.ballOn === 'colour' && !game.nominated) {
       const sim = simulate(cloneBalls(balls), p.dirX, p.dirZ, p.speed, p.side, p.height, false, p.elev || 0);
@@ -5512,7 +5547,9 @@ function keepHandOnTop(rig, clearance = 0.007) {
   for (const n of HAND_POINTS) {
     const b = rig.bones[n]; if (!b) continue;
     const q = b.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
-    lift = Math.max(lift, surfaceUnder(q) + clearance - q.y);
+    // (the bones run through the middle of the hand: the palm and wrist have more flesh under them than a fingertip)
+    const flesh = /metacarpal|wrist/.test(n) ? 0.015 : /proximal/.test(n) ? 0.011 : clearance;
+    lift = Math.max(lift, surfaceUnder(q) + Math.max(clearance, flesh) - q.y);
   }
   if (lift > 0) rig.root.position.addScaledVector(UP.clone().applyQuaternion(table.quaternion), lift);
 }
@@ -5919,7 +5956,7 @@ function poseOppHands(tip, quat, bridgeTip) {
     const palmNow = new THREE.Vector3();
     for (const n of ['index-finger-metacarpal', 'middle-finger-metacarpal', 'ring-finger-metacarpal', 'pinky-finger-metacarpal']) palmNow.add(br.bones[n].getWorldPosition(new THREE.Vector3()));
     const palmY = palmNow.multiplyScalar(0.25).applyMatrix4(inv).y;
-    shift.y = Math.max(shift.y, base + 0.009 - palmY);
+    shift.y = Math.max(shift.y, base + 0.015 - palmY);
     br.root.position.add(shift);
   }
   // When the cue is high (over the rail, or over a ball), it's a raised bridge: the fingertips reach down to the
@@ -5945,15 +5982,25 @@ function poseOppHands(tip, quat, bridgeTip) {
   {
     const cueHits = () => {
       br.root.updateMatrixWorld(true);
-      const pts = ['wrist', 'thumb-metacarpal', 'index-finger-metacarpal', 'middle-finger-metacarpal', 'ring-finger-metacarpal', 'pinky-finger-metacarpal', 'thumb-tip', 'thumb-phalanx-distal']
-        .filter(n => br.bones[n]).map(n => br.bones[n].getWorldPosition(new THREE.Vector3()));
-      const w = br.bones.wrist && br.bones['middle-finger-metacarpal'];
-      if (w) { const a = br.bones.wrist.getWorldPosition(new THREE.Vector3()), b = br.bones['middle-finger-metacarpal'].getWorldPosition(new THREE.Vector3()); pts.push(a.clone().addScaledVector(a.clone().sub(b), 0.6)); }   // (the end of the forearm)
+      const at = n => br.bones[n] ? br.bones[n].getWorldPosition(new THREE.Vector3()) : null;
+      // The thumb stands beside the cue: it mustn't go into it
+      const thumb = ['thumb-tip', 'thumb-phalanx-distal'].map(at).filter(Boolean);
+      // The rest of the hand (and the wrist and forearm) mustn't be in the cue's way at all, nor above it with the cue
+      // running underneath: only the palm lying below the cue is allowed
+      const body = ['wrist', 'thumb-metacarpal', 'index-finger-metacarpal', 'middle-finger-metacarpal', 'ring-finger-metacarpal', 'pinky-finger-metacarpal',
+        'middle-finger-phalanx-proximal', 'ring-finger-phalanx-proximal', 'pinky-finger-phalanx-proximal'].map(at).filter(Boolean);
+      const w = at('wrist'), mm = at('middle-finger-metacarpal');
+      if (w && mm) body.push(w.clone().addScaledVector(w.clone().sub(mm), 0.6));   // (the end of the forearm)
+      const side = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
       let worst = 0;
-      for (const q of pts) {
+      for (const q of thumb) {
         const along = q.clone().sub(tip).dot(dir), onAxis = tip.clone().addScaledVector(dir, along);
-        const r = TIP_R + CUE_TAPER * Math.max(0, -along) + 0.012;               // the cue's thickness there, and the hand's
-        if (q.y > onAxis.y - 0.006) worst = Math.max(worst, r - q.distanceTo(onAxis));   // (the palm lying under the cue is as it should be)
+        worst = Math.max(worst, TIP_R + CUE_TAPER * Math.max(0, -along) + 0.007 - q.distanceTo(onAxis));
+      }
+      for (const q of body) {
+        const along = q.clone().sub(tip).dot(dir), onAxis = tip.clone().addScaledVector(dir, along);
+        const r = TIP_R + CUE_TAPER * Math.max(0, -along) + 0.013;               // the cue's thickness there, and the hand's
+        if (q.y > onAxis.y - 0.006) worst = Math.max(worst, r - Math.abs(q.clone().sub(onAxis).dot(side)));
       }
       return worst;
     };
