@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 93;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 94;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -6634,8 +6634,11 @@ window.addEventListener('pointerup', e => {
   if (e.button === 0 && desk.dragging) { desk.dragging = false; return; }
   if (e.button !== 0 || !desk.charging) return;
   desk.charging = false;
-  const speed = desk.power * 7;
+  const speed = desk.power * 7, held = desk.chargeT;
   desk.power = 0;
+  // A quick click (as when you meant to press the other button to turn the view) isn't a shot: you hold the button
+  // to build up the power, so only a press held for a quarter of a second or more plays
+  if (held < 0.25) { setMessage('Hold the left button to build up power, then let go to play. (A quick click does nothing.)'); return; }
   if (speed >= 0.08) deskStrike(speed);
 });
 // Ball in hand: I/J/K/L slide the cue ball away/left/towards/right as seen from the camera
