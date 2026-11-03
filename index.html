@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 101;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 102;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3287,6 +3287,19 @@ function applySave(sv) {
   refreshBoard();
 }
 
+// Would the computer player on the table concede the frame now?
+function aiShouldConcede(profile) {
+  const me = game.current, deficit = game.players[1 - me].score - game.players[me].score, short = deficit - remainingPoints();
+  if (short <= 0) return false;                                          // it can still win without snookers
+  const onColours = game.ballOn !== 'red' && game.ballOn !== 'colour', reds = redsLeft();
+  const snookers = Math.ceil(short / 5);                                 // (a snooker's worth about 5 on average)
+  const need = Math.floor(match.bestOf / 2) + 1, loseMatch = match.frames[1 - me] + 1 >= need;
+  if (loseMatch) return onColours || snookers >= 3;
+  const r = profile.rating;
+  if (r >= 1450) return onColours || reds <= 2 || snookers >= 2;         // pro-minded
+  if (r >= 1250) return onColours || reds <= 1 || snookers >= 3;         // club players
+  return onColours || snookers >= 4;                                     // pub players play on for fun
+}
 function concedeFrame() {
   if (!isMatch() || game.frameOver || anyMoving()) return;
   const human = game.players.findIndex(p => p.ai === null && !p.remote);
@@ -4280,9 +4293,11 @@ function updateAI(dt) {
   if (refereeBusy()) return;                              // wait until the referee has finished at the runners
   const profile = AI_PLAYERS[game.players[game.current].ai];
   if (!ai.gen && !ai.plan) {
-    // Concede when it can't win without snookers
-    const deficit = game.players[1 - game.current].score - game.players[game.current].score;
-    if (game.ballOn !== 'red' && game.ballOn !== 'colour' && deficit > remainingPoints()) {
+    // Concede when it can't win without snookers, as players do: better players sooner (as soon as it's clear they'd
+    // need snookers with few reds left), pub players only when it's hopeless. Nobody gives up easily in a frame that
+    // would lose them the match.
+    if (aiShouldConcede(profile)) {
+      say('conceded');
       frameWon(1 - game.current, `${game.players[game.current].name} concedes.`);
       return;
     }
@@ -7434,7 +7449,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
