@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 99;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 100;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2837,14 +2837,23 @@ function newFrame() {
   if (settings.mode === 'champ' && champMatch()) applause(4, 0.6);   // the players come out
 }
 
+// The referee's spoken name for a player, if there is one: the computer players by name, and Player one and Player
+// two in a game between two of you (here or online). You aren't named: the referee speaks to you.
+function voiceName(i) {
+  const p = game.players[i], m = settings.mode;
+  if (m === 'two' || m === 'online') return 'name' + (24 + i);
+  if (p && p.ai !== null && p.ai !== undefined && p.ai < 24 && VOICE_TABLE && VOICE_TABLE.male && VOICE_TABLE.male['name' + p.ai]) return 'name' + p.ai;
+  return null;
+}
 // The referee announces each frame as it starts ("Second frame. Your opponent to break."). In two-player games here,
 // where "you" could be either of you, just the frame.
 function announceFrame(after = false) {
   if (!['ai', 'two', 'champ'].includes(settings.mode) || (settings.mode === 'champ' && !champMatch())) return;
   const n = match.frames[0] + match.frames[1] + 1;
   if (n > 7) return;
-  const keys = ['frame' + n], b = game.players[match.breaker];
-  if (settings.mode !== 'two') keys.push(b.ai === null || b.ai === undefined ? 'youbreak' : 'oppbreak');
+  const keys = ['frame' + n], b = game.players[match.breaker], who = voiceName(match.breaker);
+  if (who) keys.push(who, 'tobreak');                                   // "Second frame. Priya Lal to break."
+  else if (settings.mode !== 'two') keys.push(b.ai === null || b.ai === undefined ? 'youbreak' : 'oppbreak');
   (after ? sayAfter : say)(...keys);
 }
 
@@ -2857,6 +2866,7 @@ function frameWon(w, text) {
   let msg = `${text ? text + ' ' : ''}${winner.name} ${winner.name === 'You' ? 'win' : 'wins'} the frame ${winner.score}–${game.players[1 - w].score}.`;
   if (match.frames[w] >= need) {
     match.over = true;
+    if (match.bestOf > 1 || settings.mode === 'champ') sayAfter('framematch');
     if (match.bestOf > 1) msg += ` Match to ${winner.name === 'You' ? 'you' : winner.name}, ${match.frames[w]}–${match.frames[1 - w]}.`;
     if (settings.mode === 'champ') msg = champRecordResult(w, msg);
     else msg += ' Press A (or C) for a new match.';
@@ -3279,6 +3289,7 @@ function concedeFrame() {
   const human = game.players.findIndex(p => p.ai === null && !p.remote);
   const quitter = settings.mode === 'two' ? game.current : human;
   if (settings.mode === 'online') netSend({ t: 'concede' });
+  say('conceded');
   frameWon(1 - quitter, `${game.players[quitter].name} conceded.`);
 }
 
@@ -3395,6 +3406,8 @@ function endShotRules(s) {
     askNomination(true);
   } else {
     if (game.ballOn === 'colour') game.ballOn = redsLeft() > 0 ? 'red' : 2;
+    // At the end of a break the referee gives it, with the player's name ("Priya Lal, 46"); yours he's already counted aloud
+    if (game.breakScore > 0) { const who = voiceName(game.current); if (who) sayAfter(who, String(game.breakScore)); }
     game.current = 1 - game.current; game.breakScore = 0;
     setMessage(`${game.players[game.current].name} to play.`);
     checkStalemate();
@@ -3639,7 +3652,8 @@ function champRecordResult(w, msg) {
   champFinishRound();
   if (!youWon) while (champ.champion === null) champFinishRound();
   saveChamp(); renderDraw();
-  if (champ.champion === champ.you) { showTrophy(); addHonour(champ.level || settings.champLevel); return `${msg} You are the champion!`; }
+  if (champ.champion === champ.you) { showTrophy(); addHonour(champ.level || settings.champLevel); sayAfter('champion'); return `${msg} You are the champion!`; }
+  if (!youWon && champ.champion === m.winner) { const ai = champ.entrants[m.winner].ai; if (ai !== null && ai !== undefined && ai < 24) sayAfter('name' + ai, 'ischamp'); }   // (you lost the final)
   if (!youWon) return `${msg} You're out. ${champ.entrants[champ.champion].name} won the championship.`;
   const next = champMatch();
   const opp = champ.entrants[next.a === champ.you ? next.b : next.a].name;

@@ -49,6 +49,8 @@ This reads `index.src.html`, embeds each `@@ASSET:name@@` file from `assets/` an
   | Male coach | Ryan | 0% |
   | Female coach | Olivia | 0% |
 
+- The referees' players' names and match calls ("Priya Lal, 46", "Frame and match", "Ladies and gentlemen: your champion!") were made with [Chatterbox](https://github.com/resemble-ai/chatterbox) (MIT), cloned from the referees' own Airvoz recordings.
+
 ## Licence
 
 Desk Snooker is released under the [MIT Licence](LICENSE). Third-party parts keep their own licences: three.js, PeerJS and the WebXR Input Profiles hand models are MIT.
