@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 100;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 101;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2598,6 +2598,7 @@ function coachSay(...keys) {
 const voiceTokens = { ref: 0, coach: 0 };
 // A new call cuts off the last one, unless it's queued `after` it
 const voiceEnd = { ref: 0, coach: 0 }, voiceChain = { ref: Promise.resolve(), coach: Promise.resolve() };
+const RUN_ON = new Set(['tobreak', 'ischamp']);
 function playVoice(name, keys, channel, keep, after = false) {
   const token = after ? voiceTokens[channel] : ++voiceTokens[channel];
   const run = async () => {
@@ -2612,8 +2613,10 @@ function playVoice(name, keys, channel, keep, after = false) {
       src.connect(g).connect(audio.destination);
       src.start(t, Math.max(0, clip[0] - 0.02), clip[1] + 0.08);
       if (keep) keep.push(src);
-      t += clip[1] + 0.35;
-      voiceEnd[channel] = t - 0.35;
+      // (a pause between calls, but none before words that run on from a name: "Priya Lal to break")
+      const gap = RUN_ON.has(keys.map(String)[keys.map(String).indexOf(k) + 1]) ? 0.0 : 0.35;
+      t += clip[1] + gap;
+      voiceEnd[channel] = t - gap;
     }
   };
   voiceChain[channel] = (after ? voiceChain[channel].then(run) : run()).catch(() => { /* a failed call mustn't stop the next */ });
@@ -4478,10 +4481,12 @@ function placeCueBehindBall(c, dirX, dirZ, gap, side, height, elev = 0) {
   // On a rest, the cue lies in the rest's head, which stays on the cloth a fixed distance behind the ball (just behind
   // the tip as it's settled): striking higher or lower on the cue ball drops or raises the butt, pivoting on the rest
   const restKind = restsOn() && (c === cue || c === aiCue) ? reachNeed(balls, cueBall, dirX, dirZ) : 'none';
-  let e = Math.max(elev, c === aiCue ? 0.11 : 0.08);      // (the computer's bridge stands a little higher)
+  // (elev is the raise on top of the cue's usual rest angle over the rail, as playableShot checked it clear of the
+  // balls and the rail; the computer's bridge stands a little higher)
+  let e = Math.max(elev + CUE_REST, c === aiCue ? 0.11 : 0.08);
   if (restKind !== 'none') {
     const back = (c === aiCue ? 0.03 : 0.01) + BRIDGE_BACK;
-    e = Math.max(elev, Math.atan2(REST_INFO[restKind].head + 0.006 - (R + height * R), back));
+    e = Math.max(elev + CUE_REST, Math.atan2(REST_INFO[restKind].head + 0.006 - (R + height * R), back));
   }
   const f = Math.sqrt(Math.max(0, 1 - side * side - height * height));
   const d3 = new THREE.Vector3(dirX * Math.cos(e), -Math.sin(e), dirZ * Math.cos(e));
@@ -6229,8 +6234,8 @@ function poseOppHands(tip, quat, bridgeTip) {
       fix = { key, a: 0, sh: 0 };
       if (cueHits() > 0) {
         let best = null;
-        for (const sh of [0, 0.01, -0.01, 0.02, -0.02, 0.03, -0.03, 0.045, -0.045, 0.06, -0.06])
-          for (const a of [0, 0.12, -0.12, 0.24, -0.24, 0.36, -0.36, 0.5, -0.5]) {
+        for (const sh of [0, 0.01, -0.01, 0.02, -0.02, 0.03, -0.03, 0.045, -0.045, 0.06, -0.06, 0.08, -0.08, 0.1, -0.1])
+          for (const a of [0, 0.12, -0.12, 0.24, -0.24, 0.36, -0.36, 0.5, -0.5, 0.7, -0.7]) {
             apply(a, sh);
             const h = cueHits(), score = h > 0 ? 100 + h : Math.abs(a) * 0.05 + Math.abs(sh);
             if (!best || score < best.score) best = { a, sh, score };
