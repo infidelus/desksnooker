@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 97;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 98;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1662,6 +1662,9 @@ const aisleNear = (x, z, o) => AISLES.some(([ax, az]) => {
 }
 
 // ---------- the crowd: seated people, who clap when there's something to clap ----------
+// Each person is put together from a few instanced meshes (clothes, trousers, hands and neck, a head with a face,
+// one of several hairstyles, and for some a shirt under a jacket, glasses or a cap), so the whole crowd is a
+// handful of draw calls. The head turns a little on its own: people look about.
 const crowd = (() => {
   const seats = [];
   for (let i = 0; i < ROWS; i++) {
@@ -1682,25 +1685,25 @@ const crowd = (() => {
   const backs = new THREE.InstancedMesh(seatBack, new THREE.MeshLambertMaterial({ color: 0x6a3418 }), seats.length);
   const pads = new THREE.InstancedMesh(seatPad, new THREE.MeshLambertMaterial({ color: 0x5a1612 }), seats.length);
   const people = seats.filter(() => rnd() < 0.9);
-  // A seated person, facing +z, built of simple rounded parts. Each part says which arm it belongs to (aArm: +1
-  // right, -1 left, 0 neither), so the forearms and hands can be lifted to clap.
+  // Body parts, facing +z. aArm marks the forearms and hands (+1 right, -1 left) so they can be lifted to clap.
   const SEG = 5;
+  const tag = (geo, arm, keepUv = false) => {
+    for (const k of Object.keys(geo.attributes)) if (!['position', 'normal', ...(keepUv ? ['uv'] : [])].includes(k)) geo.deleteAttribute(k);
+    geo.setAttribute('aArm', new THREE.Float32BufferAttribute(new Array(geo.attributes.position.count).fill(arm), 1));
+    return geo;
+  };
   const limb = (a, b, r, arm = 0, sx = 1, sz = 1) => {
     const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), d = B.clone().sub(A), len = d.length();
     const geo = new THREE.CapsuleGeometry(r, Math.max(0.001, len), 1, SEG).scale(sx, 1, sz);
     geo.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()));
-    geo.translate((A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2);
-    return tag(geo, arm);
+    return tag(geo.translate((A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2), arm);
   };
-  const ball = (c, r, sx = 1, sy = 1, sz = 1, arm = 0, ws = 8, hs = 6, thetaLen = Math.PI) =>
-    tag(new THREE.SphereGeometry(r, ws, hs, 0, Math.PI * 2, 0, thetaLen).scale(sx, sy, sz).translate(...c), arm);
-  const tag = (geo, arm) => {
-    const g = geo.index ? geo : geo;                     // (kept indexed: far fewer vertices to draw)
-    for (const k of Object.keys(g.attributes)) if (!['position', 'normal'].includes(k)) g.deleteAttribute(k);
-    g.setAttribute('aArm', new THREE.Float32BufferAttribute(new Array(g.attributes.position.count).fill(arm), 1));
-    return g;
-  };
+  const ball = (c, r, sx = 1, sy = 1, sz = 1, arm = 0, ws = 8, hs = 6, th0 = 0, thLen = Math.PI, ph0 = 0, phLen = Math.PI * 2) =>
+    tag(new THREE.SphereGeometry(r, ws, hs, ph0, phLen, th0, thLen).scale(sx, sy, sz).translate(...c), arm);
   const both = f => [f(1), f(-1)];
+  // The head is centred on the neck's top so it can turn: everything above the neck is built about this point
+  const NECK = new THREE.Vector3(0, 1.0, -0.09);
+  const H = (x, y, z) => [x, y - NECK.y, z - NECK.z];
   const clothesGeo = mergeGeometries([
     limb([0, 0.56, -0.1], [0, 0.88, -0.12], 0.15, 0, 1.2, 0.72),                                        // torso
     ...both(sd => limb([sd * 0.19, 0.88, -0.11], [sd * 0.21, 0.64, -0.02], 0.048)),                       // upper arms
@@ -1713,15 +1716,64 @@ const crowd = (() => {
   ]);
   const skinGeo = mergeGeometries([
     limb([0, 0.9, -0.1], [0, 1.0, -0.09], 0.045),                                                        // neck
-    ball([0, 1.1, -0.07], 0.1, 0.88, 1.12, 0.98),                                                         // head
     ...both(sd => ball([sd * 0.12, 0.52, 0.26], 0.042, 0.85, 0.6, 1.25, sd, 6, 4)),                       // hands
   ]);
-  const hairGeo = ball([0, 1.13, -0.085], 0.105, 0.9, 1.0, 1.0, 0, 8, 4, Math.PI * 0.55);                 // hair (top and back of the head)
+  // (a shirt front and collar, worn under a jacket: the jacket is the clothes colour)
+  const shirtGeo = mergeGeometries([
+    tag(new THREE.ConeGeometry(0.05, 0.2, 3).rotateZ(Math.PI).scale(1, 1, 0.12).translate(0, 0.8, 0.002), 0),   // the V of shirt between the lapels
+    tag(new THREE.BoxGeometry(0.13, 0.03, 0.05).translate(0, 0.9, -0.05), 0),                                 // the collar
+  ]);
+  // The head, with a face painted on (the face texture has eight faces, one per strip; each person has one)
+  const headGeo = tag(new THREE.SphereGeometry(0.1, 12, 9).scale(0.88, 1.12, 0.98).translate(...H(0, 1.1, -0.07)), 0, true);
+  headGeo.attributes.uv.array.forEach((v, i, arr) => { if (i % 2 === 0) arr[i] = v + 0.25; });   // (the face centred on the front; round the back the texture's plain edge)
+  const noseGeo = tag(new THREE.ConeGeometry(0.018, 0.04, 5).rotateX(Math.PI / 2).translate(...H(0, 1.09, 0.03)), 0);
+  // Hairstyles: short, collar-length, long, a bun, receding, and a flat cap
+  const HAIR = {
+    short: ball(H(0, 1.13, -0.085), 0.105, 0.9, 1.0, 1.0, 0, 10, 4, 0, Math.PI * 0.5),
+    collar: mergeGeometries([ball(H(0, 1.13, -0.085), 0.106, 0.92, 1.02, 1.02, 0, 10, 5, 0, Math.PI * 0.62), ball(H(0, 1.06, -0.12), 0.09, 1.0, 0.9, 0.7, 0, 8, 4)]),
+    long: mergeGeometries([ball(H(0, 1.13, -0.08), 0.108, 0.94, 1.04, 1.04, 0, 10, 5, 0, Math.PI * 0.6), limb(H(0, 1.08, -0.13), H(0, 0.86, -0.14), 0.085, 0, 1.25, 0.5),
+      ...both(sd => limb(H(sd * 0.085, 1.1, -0.06), H(sd * 0.09, 0.9, -0.07), 0.028))]),
+    bun: mergeGeometries([ball(H(0, 1.13, -0.085), 0.105, 0.9, 1.0, 1.0, 0, 10, 4, 0, Math.PI * 0.55), ball(H(0, 1.2, -0.17), 0.045, 1, 1, 1, 0, 6, 4)]),
+    receding: ball(H(0, 1.1, -0.1), 0.106, 0.9, 1.0, 1.0, 0, 10, 3, Math.PI * 0.3, Math.PI * 0.3, Math.PI * 0.6, Math.PI * 1.8),
+    cap: mergeGeometries([ball(H(0, 1.14, -0.075), 0.11, 0.92, 0.8, 1.0, 0, 10, 4, 0, Math.PI * 0.5), tag(new THREE.CylinderGeometry(0.1, 0.1, 0.012, 10, 1, false, -Math.PI / 2, Math.PI).scale(0.9, 1, 0.8).translate(...H(0, 1.15, 0.0)), 0)]),
+  };
+  const glassesGeo = mergeGeometries([
+    ...both(sd => tag(new THREE.TorusGeometry(0.022, 0.0035, 4, 10).translate(...H(sd * 0.035, 1.115, 0.025)), 0)),
+    tag(new THREE.BoxGeometry(0.03, 0.004, 0.004).translate(...H(0, 1.118, 0.027)), 0),
+    ...both(sd => tag(new THREE.BoxGeometry(0.004, 0.004, 0.09).translate(...H(sd * 0.075, 1.118, -0.02)), 0)),
+  ]);
+  // Eight faces in strips down one texture, painted in light greys so the skin colour comes through
+  const faceTex = paintTexture(512, 1024, (g, w, h) => {
+    const sh = h / 8;
+    for (let k = 0; k < 8; k++) {
+      const y0 = k * sh, cx = w / 2;
+      g.fillStyle = '#f4f0ee'; g.fillRect(0, y0, w, sh);
+      const at = f => y0 + f * sh;
+      // eyebrows, eyes, a shadow beside the nose, the mouth; each face a little different
+      const sp = 24 + (k % 3) * 3, bw = 2.5 + (k % 4);
+      g.strokeStyle = '#4a3a30'; g.lineWidth = bw; g.lineCap = 'round';
+      for (const sd of [-1, 1]) { g.beginPath(); g.moveTo(cx + sd * (sp - 9), at(0.44) - (k === 5 ? 3 : 0)); g.quadraticCurveTo(cx + sd * sp, at(0.42), cx + sd * (sp + 10), at(0.445)); g.stroke(); }
+      for (const sd of [-1, 1]) {
+        g.fillStyle = '#ffffff'; g.beginPath(); g.ellipse(cx + sd * sp, at(0.5), 7, 4, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = k % 2 ? '#3a2a1a' : '#2a3a4a'; g.beginPath(); g.arc(cx + sd * sp, at(0.5), 3.4, 0, Math.PI * 2); g.fill();
+      }
+      g.fillStyle = 'rgba(120,80,70,0.25)'; g.beginPath(); g.ellipse(cx + 6, at(0.6), 5, 9, 0, 0, Math.PI * 2); g.fill();
+      if (k === 2 || k === 6) { g.fillStyle = 'rgba(70,50,40,0.55)'; g.beginPath(); g.ellipse(cx, at(0.8), 30, 18, 0, 0, Math.PI); g.fill(); }   // a beard
+      if (k === 3) { g.fillStyle = 'rgba(70,50,40,0.6)'; g.fillRect(cx - 14, at(0.66), 28, 5); }                                              // a moustache
+      if (k === 7) { g.fillStyle = 'rgba(90,80,80,0.18)'; g.fillRect(cx - 32, at(0.64), 64, 26); }                                            // stubble
+      const lips = k === 1 || k === 4 ? '#b0404a' : '#9a5a50';                                                                                  // (lipstick on two)
+      g.strokeStyle = lips; g.lineWidth = k === 1 || k === 4 ? 4 : 3; g.beginPath();
+      if (k % 3 === 0) g.arc(cx, at(0.66), 11, 0.2 * Math.PI, 0.8 * Math.PI); else { g.moveTo(cx - 11, at(0.715)); g.quadraticCurveTo(cx, at(0.72) + (k % 2 ? 2 : -1), cx + 11, at(0.715)); }
+      g.stroke();
+      g.fillStyle = 'rgba(200,120,110,0.12)'; for (const sd of [-1, 1]) { g.beginPath(); g.arc(cx + sd * 34, at(0.64), 10, 0, Math.PI * 2); g.fill(); }   // a little colour in the cheeks
+    }
+  });
+  faceTex.wrapS = THREE.ClampToEdgeWrapping; faceTex.wrapT = THREE.ClampToEdgeWrapping;
   // Gentle movement; when they clap, the forearms come up and the hands meet in front of the chest
   const crowdU = { uTime: { value: 0 }, uClap: { value: 0 } };
-  const pose = m => { m.onBeforeCompile = sh => {
+  const pose = (m, face = false) => { m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, crowdU);
-    sh.vertexShader = 'uniform float uTime, uClap;\nattribute float aArm;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+    sh.vertexShader = 'uniform float uTime, uClap;\nattribute float aArm;\n' + (face ? 'attribute float aFace;\n' : '') + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
       float ph = float(gl_InstanceID) * 2.399;
       float claps = uClap * step(0.15, fract(ph * 7.31));                    // (a few don't bother)
       if (abs(aArm) > 0.5) {
@@ -1733,27 +1785,56 @@ const crowd = (() => {
         v.x -= aArm * claps * (0.075 + 0.04 * beat);                           // hands together, apart, together
         transformed = e + v;
       }
-      transformed.x += 0.01 * sin(uTime * (0.4 + fract(ph) * 0.5) + ph) * smoothstep(0.5, 1.1, transformed.y);`);
+      transformed.x += 0.01 * sin(uTime * (0.4 + fract(ph) * 0.5) + ph) * smoothstep(0.5, 1.1, transformed.y);`)
+      .replace('#include <uv_vertex>', face ? '#include <uv_vertex>\n#ifdef USE_MAP\nvMapUv.y = (vMapUv.y + aFace) / 8.0;\n#endif' : '#include <uv_vertex>');
   }; return m; };
-  const mk = geo => { const m = new THREE.InstancedMesh(geo, pose(new THREE.MeshLambertMaterial()), people.length); return m; };
-  const clothesM = mk(clothesGeo), legsM = mk(legsGeo), skinM = mk(skinGeo), hairM = mk(hairGeo);
-  const clothes = [0x1b2233, 0x111111, 0x2b2b2b, 0x3a3f4a, 0xd8d8d8, 0x7a1e1e, 0x23402e, 0x6a5a40, 0x2a3a5a, 0x8a8a8a, 0x4a6aa0, 0xc8b89a, 0x5a2a5a];
-  const trousers = [0x15171c, 0x22252c, 0x2a3550, 0x3a3a3a, 0x4a3e30, 0x1e2a3e];
-  const skins = [0xe0b89a, 0xc89878, 0xa8785a, 0x7a5038, 0x5a3a28, 0xf0c8a8];
-  const hair = [0x2a1a10, 0x111111, 0x5a3a20, 0x8a8a8a, 0xb89a60, 0xc8c8c0];
-  const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1), c = new THREE.Color();
-  seats.forEach((s, i) => { qq.setFromAxisAngle(Y_AXIS, s.face); m4.compose(new THREE.Vector3(s.x, s.y, s.z), qq, one); backs.setMatrixAt(i, m4); pads.setMatrixAt(i, m4); });
-  people.forEach((s, i) => {
-    const sc = 0.92 + rnd() * 0.14, dim = 0.55 - s.row * 0.022;
-    qq.setFromAxisAngle(Y_AXIS, s.face + (rnd() - 0.5) * 0.25); m4.compose(new THREE.Vector3(s.x, s.y, s.z), qq, new THREE.Vector3(sc, sc, sc));
-    for (const m of [clothesM, legsM, skinM, hairM]) m.setMatrixAt(i, m4);
-    const skin = skins[Math.floor(rnd() * skins.length)];
-    clothesM.setColorAt(i, c.set(clothes[Math.floor(rnd() * clothes.length)]).multiplyScalar(dim));
-    legsM.setColorAt(i, c.set(trousers[Math.floor(rnd() * trousers.length)]).multiplyScalar(dim));
-    skinM.setColorAt(i, c.set(skin).multiplyScalar(dim));
-    hairM.setColorAt(i, c.set(rnd() < 0.12 ? skin : hair[Math.floor(rnd() * hair.length)]).multiplyScalar(dim));   // (a few bald heads)
+  const mk = (geo, list, mat) => { const m = new THREE.InstancedMesh(geo, pose(mat || new THREE.MeshLambertMaterial(), !!(mat && mat.map)), list.length); m.userData.list = list; return m; };
+  const clothes = [0x1b2233, 0x111111, 0x2b2b2b, 0x3a3f4a, 0xd8d8d8, 0x7a1e1e, 0x23402e, 0x6a5a40, 0x2a3a5a, 0x8a8a8a, 0x4a6aa0, 0xc8b89a, 0x5a2a5a, 0xa04a2a, 0x2a6a6a];
+  const trousers = [0x15171c, 0x22252c, 0x2a3550, 0x3a3a3a, 0x4a3e30, 0x1e2a3e, 0x5a5048];
+  const skins = [0xe8c0a2, 0xd6a684, 0xb88866, 0x8a5c40, 0x5e3c28, 0xf2d0b4];
+  const hairCols = [0x2a1a10, 0x141210, 0x5a3a20, 0x8a8a8a, 0xb89a60, 0xd0d0c8, 0x7a3a1a];
+  const shirts = [0xf2f2f2, 0xdfe8f4, 0xf0e6e0, 0x8ab0d8];
+  // Who looks like what
+  people.forEach(s => {
+    const female = rnd() < 0.42;
+    s.skin = skins[Math.floor(rnd() * skins.length)];
+    s.hairC = hairCols[Math.floor(rnd() * hairCols.length)];
+    const r = rnd();
+    s.hair = female ? (r < 0.4 ? 'long' : r < 0.7 ? 'collar' : r < 0.85 ? 'bun' : 'short') : (r < 0.5 ? 'short' : r < 0.68 ? 'receding' : r < 0.8 ? 'collar' : r < 0.9 ? 'cap' : 'none');
+    s.face = female ? [0, 1, 4, 5][Math.floor(rnd() * 4)] : [0, 2, 3, 5, 6, 7][Math.floor(rnd() * 6)];
+    s.jacket = rnd() < 0.3; s.specs = rnd() < 0.22;
+    s.build = female ? 0.9 + rnd() * 0.12 : 0.97 + rnd() * 0.18; s.size = (female ? 0.92 : 0.97) + rnd() * 0.1;
+    s.turn = (rnd() - 0.5) * 0.7; s.nod = (rnd() - 0.4) * 0.25;
   });
-  for (const m of [backs, pads, clothesM, legsM, skinM, hairM]) { m.frustumCulled = false; arena.add(m); }
+  const parts = {
+    clothes: mk(clothesGeo, people), legs: mk(legsGeo, people), skin: mk(skinGeo, people), nose: mk(noseGeo, people),
+    head: mk(headGeo, people, new THREE.MeshLambertMaterial({ map: faceTex })),
+    shirt: mk(shirtGeo, people.filter(s => s.jacket)), specs: mk(glassesGeo, people.filter(s => s.specs), new THREE.MeshLambertMaterial({ color: 0x1a1a1a })),
+  };
+  for (const [k, g] of Object.entries(HAIR)) parts['hair_' + k] = mk(g, people.filter(s => s.hair === k));
+  headGeo.setAttribute('aFace', new THREE.InstancedBufferAttribute(new Float32Array(people.map(s => 7 - s.face)), 1));
+  const m4 = new THREE.Matrix4(), hm = new THREE.Matrix4(), qq = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1), c = new THREE.Color();
+  seats.forEach((s, i) => { qq.setFromAxisAngle(Y_AXIS, s.face); m4.compose(new THREE.Vector3(s.x, s.y, s.z), qq, one); backs.setMatrixAt(i, m4); pads.setMatrixAt(i, m4); });
+  people.forEach(s => {
+    s.dim = 0.55 - s.row * 0.022;
+    qq.setFromAxisAngle(Y_AXIS, s.face + (rnd() - 0.5) * 0.2);
+    s.m = new THREE.Matrix4().compose(new THREE.Vector3(s.x, s.y, s.z), qq, new THREE.Vector3(s.size * s.build, s.size, s.size));
+    // the head's own turn and tilt, about the top of the neck (and not widened with the build)
+    s.hm = s.m.clone().multiply(new THREE.Matrix4().makeTranslation(NECK.x, NECK.y, NECK.z))
+      .multiply(new THREE.Matrix4().makeScale(1 / s.build, 1, 1))
+      .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(s.nod, s.turn, 0, 'YXZ')));
+  });
+  const fill = (m, colour, head = false) => m.userData.list.forEach((s, i) => { m.setMatrixAt(i, head ? s.hm : s.m); const col = colour(s); if (col !== null) m.setColorAt(i, c.set(col).multiplyScalar(s.dim)); });
+  fill(parts.clothes, s => clothes[Math.floor(rnd() * clothes.length)]);
+  fill(parts.legs, s => trousers[Math.floor(rnd() * trousers.length)]);
+  fill(parts.skin, s => s.skin);
+  fill(parts.nose, s => s.skin, true);
+  fill(parts.head, s => s.skin, true);
+  fill(parts.shirt, s => shirts[Math.floor(rnd() * shirts.length)]);
+  fill(parts.specs, s => null, true);
+  for (const k of Object.keys(HAIR)) fill(parts['hair_' + k], s => k === 'cap' && rnd() < 0.7 ? [0x3a3a40, 0x5a4a3a, 0x2a3a2a][Math.floor(rnd() * 3)] : s.hairC, true);
+  // the noses sit on the head, so they turn with it; the neck and hands don't
+  for (const m of [backs, pads, ...Object.values(parts)]) { if (!m.count) continue; m.frustumCulled = false; arena.add(m); }
   return { u: crowdU, clap: 0 };
 })();
 
@@ -1813,30 +1894,61 @@ function drawArenaScreen() {
   // the overhead camera
   box(0.18, 0.22, 0.3, new THREE.MeshLambertMaterial({ color: 0xc8c8c8 }), 0, RIG_H - 0.3, 0, arena);
   cyl(0.06, 0.06, 0.12, M.black, 0, RIG_H - 0.47, 0, arena, 10);
-  // TV cameras on their pedestals at two corners of the stage
-  const camBody = new THREE.MeshLambertMaterial({ color: 0x1a1a1c }), camGrey = new THREE.MeshLambertMaterial({ color: 0x5a5c60 });
+  // TV cameras on studio pedestals at two corners of the stage: a wheeled base on the floor, a column with a steering
+  // ring, the pan-and-tilt head, and the camera itself with its lens, hood, viewfinder and the operator's pan bars
+  const camBody = new THREE.MeshLambertMaterial({ color: 0x8a8d96, emissive: 0x16171a }), camDark = new THREE.MeshLambertMaterial({ color: 0x4a4c54, emissive: 0x0c0c0e }), camGrey = new THREE.MeshLambertMaterial({ color: 0xb8bac2, emissive: 0x1a1b1e });
+  const camLens = new THREE.MeshStandardMaterial({ color: 0x1a2a3a, roughness: 0.1, metalness: 0.5, envMap: roomEnv });
   for (const [x, z] of [[4.3, 3.2], [-4.4, -3.1]]) {
     const a = Math.atan2(-z, -x);
     const camG = new THREE.Group(); camG.position.set(x, 0, z); camG.rotation.y = -a; arena.add(camG);
-    for (let i = 0; i < 3; i++) { const t = i / 3 * Math.PI * 2; const leg = cyl(0.015, 0.015, 1.25, camGrey, Math.cos(t) * 0.22, 0.6, Math.sin(t) * 0.22, camG, 6); leg.rotation.set(Math.sin(t) * 0.2, 0, -Math.cos(t) * 0.2); }
-    cyl(0.05, 0.05, 0.3, camGrey, 0, 1.3, 0, camG, 8);
-    box(0.5, 0.3, 0.25, camBody, 0.05, 1.55, 0, camG);
-    const lensM = cyl(0.08, 0.1, 0.35, camBody, 0.45, 1.56, 0, camG, 12); lensM.rotation.z = Math.PI / 2;
-    box(0.02, 0.04, 0.04, new THREE.MeshBasicMaterial({ color: 0xff2020 }), -0.21, 1.66, 0, camG);
-    const arm = cyl(0.015, 0.015, 0.8, camGrey, -0.5, 1.45, 0, camG, 6); arm.rotation.z = 1.2;
+    for (let i = 0; i < 3; i++) {                                                         // the base: three legs on castors
+      const t = i / 3 * Math.PI * 2 + Math.PI / 6, leg = box(0.42, 0.06, 0.08, camBody, Math.cos(t) * 0.2, 0.11, Math.sin(t) * 0.2, camG); leg.rotation.y = -t;
+      const w = cyl(0.04, 0.04, 0.03, camDark, Math.cos(t) * 0.38, 0.04, Math.sin(t) * 0.38, camG, 10); w.rotation.x = Math.PI / 2; w.rotation.z = t;
+      cyl(0.012, 0.012, 0.06, camGrey, Math.cos(t) * 0.38, 0.09, Math.sin(t) * 0.38, camG, 6);
+    }
+    const skirt = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.012, 6, 24), camGrey); skirt.rotation.x = Math.PI / 2; skirt.position.y = 0.1; camG.add(skirt);
+    cyl(0.1, 0.12, 0.55, camBody, 0, 0.42, 0, camG, 14);                                 // the column, in two sections
+    cyl(0.07, 0.07, 0.5, camGrey, 0, 0.94, 0, camG, 12);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.014, 6, 24), camDark); ring.rotation.x = Math.PI / 2; ring.position.y = 0.92; camG.add(ring);
+    for (let i = 0; i < 3; i++) { const t = i / 3 * Math.PI * 2; const sp = box(0.24, 0.02, 0.02, camDark, Math.cos(t) * 0.12, 0.92, Math.sin(t) * 0.12, camG); sp.rotation.y = -t; }
+    box(0.22, 0.1, 0.22, camDark, 0, 1.24, 0, camG);                                     // the pan-and-tilt head
+    const cam = new THREE.Group(); cam.position.set(0, 1.43, 0); cam.rotation.z = -0.06; camG.add(cam);
+    box(0.5, 0.28, 0.24, camBody, 0, 0, 0, cam);
+    box(0.5, 0.04, 0.2, camDark, 0, 0.16, 0, cam);
+    const lens = cyl(0.075, 0.085, 0.36, camDark, 0.42, -0.01, 0, cam, 16); lens.rotation.z = Math.PI / 2;
+    const glass = new THREE.Mesh(new THREE.CircleGeometry(0.068, 16), camLens); glass.rotation.y = Math.PI / 2; glass.position.set(0.601, -0.01, 0); cam.add(glass);
+    const hood = cyl(0.1, 0.09, 0.08, camDark, 0.64, -0.01, 0, cam, 16, true); hood.rotation.z = Math.PI / 2;
+    box(0.16, 0.13, 0.17, camDark, -0.18, 0.24, 0, cam).rotation.z = 0.12;              // the viewfinder
+    box(0.004, 0.09, 0.13, new THREE.MeshBasicMaterial({ color: 0x2a4a6a }), -0.262, 0.25, 0, cam);
+    box(0.06, 0.03, 0.03, new THREE.MeshBasicMaterial({ color: 0xff2020 }), 0.1, 0.16, 0.1, cam);   // the tally light
+    for (const sz of [-1, 1]) { const bar = cyl(0.014, 0.014, 0.7, camGrey, -0.48, -0.12, sz * 0.12, cam, 8); bar.rotation.z = 1.25; cyl(0.02, 0.02, 0.1, camDark, -0.8, -0.24, sz * 0.12, cam, 8).rotation.z = 1.25; }
   }
-  // The players' chairs against the wall on one side, each with a little table and water
+  // The players' chairs against the wall on one side, each with a little round table, a glass of water and a bottle
   const chairMat = new THREE.MeshLambertMaterial({ color: 0x8a8a90 }), legMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2e });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0xeef6fa, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.32, envMap: roomEnv, side: THREE.DoubleSide, depthWrite: false });
+  const waterMat = new THREE.MeshStandardMaterial({ color: 0xbfe0ff, roughness: 0.05, transparent: true, opacity: 0.35, envMap: roomEnv, depthWrite: false });
+  const bottleMat = new THREE.MeshStandardMaterial({ color: 0xd8f0ff, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.45, envMap: roomEnv, depthWrite: false });
+  const tumbler = new THREE.LatheGeometry([[0, 0], [0.029, 0], [0.03, 0.004], [0.036, 0.105], [0.034, 0.105], [0.028, 0.008], [0, 0.008]].map(([r, y]) => new THREE.Vector2(r, y)), 20);
+  const bottle = new THREE.LatheGeometry([[0, 0], [0.032, 0], [0.034, 0.01], [0.034, 0.16], [0.028, 0.19], [0.014, 0.215], [0.013, 0.225], [0, 0.225]].map(([r, y]) => new THREE.Vector2(r, y)), 18);
+  const labelTex = paintTexture(256, 64, (g, w, h) => { g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); g.fillStyle = '#1d5fb8'; g.fillRect(0, 0, w, 10); g.fillRect(0, h - 10, w, 10);
+    g.font = '700 17px Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#1d5fb8'; g.fillText('Pocket Spring', w * 0.25, h / 2); g.fillText('Pocket Spring', w * 0.75, h / 2); });
   for (const x of [-1.8, 1.8]) {
     const z = STAGE_B - 0.55;
     const ch = new THREE.Group(); ch.position.set(x, 0, z); ch.rotation.y = Math.PI; arena.add(ch);
     box(0.62, 0.14, 0.56, chairMat, 0, 0.45, 0, ch); box(0.62, 0.55, 0.12, chairMat, 0, 0.78, -0.24, ch);
     for (const sx of [-1, 1]) box(0.1, 0.24, 0.56, chairMat, sx * 0.31, 0.6, 0, ch);
     for (const sx of [-0.26, 0.26]) box(0.05, 0.38, 0.05, legMat, sx, 0.19, 0, ch);
-    const tx = x + (x > 0 ? -0.6 : 0.6);
-    box(0.36, 0.5, 0.36, new THREE.MeshLambertMaterial({ color: 0x1d3e86 }), tx, 0.25, z, arena);
-    cyl(0.03, 0.026, 0.11, new THREE.MeshStandardMaterial({ color: 0xcfe6ee, roughness: 0.05, transparent: true, opacity: 0.4 }), tx - 0.07, 0.56, z, arena);
-    cyl(0.032, 0.032, 0.22, new THREE.MeshStandardMaterial({ color: 0xd8eef8, roughness: 0.05, transparent: true, opacity: 0.5 }), tx + 0.07, 0.61, z, arena);
+    const tx = x + (x > 0 ? -0.62 : 0.62);
+    cyl(0.2, 0.2, 0.025, new THREE.MeshLambertMaterial({ color: 0x1d3e86 }), tx, 0.6, z, arena, 24);   // a round table on a stem
+    cyl(0.025, 0.025, 0.58, legMat, tx, 0.3, z, arena, 8);
+    cyl(0.16, 0.18, 0.02, legMat, tx, 0.01, z, arena, 20);
+    const ty = 0.6125;
+    cyl(0.045, 0.045, 0.004, new THREE.MeshLambertMaterial({ color: 0xe8e0d0 }), tx - 0.07, ty + 0.002, z + 0.03, arena, 16);   // a coaster
+    const gl = new THREE.Mesh(tumbler, glassMat); gl.position.set(tx - 0.07, ty + 0.004, z + 0.03); gl.userData.keep = true; arena.add(gl);
+    const wt = cyl(0.03, 0.032, 0.07, waterMat, tx - 0.07, ty + 0.047, z + 0.03, arena, 16); wt.userData.keep = true;
+    const bt = new THREE.Mesh(bottle, bottleMat); bt.position.set(tx + 0.08, ty, z - 0.04); bt.userData.keep = true; arena.add(bt);
+    const lb = cyl(0.0345, 0.0345, 0.06, new THREE.MeshLambertMaterial({ map: labelTex }), tx + 0.08, ty + 0.09, z - 0.04, arena, 18, true); lb.userData.keep = true;
+    cyl(0.015, 0.015, 0.02, new THREE.MeshLambertMaterial({ color: 0x1d5fb8 }), tx + 0.08, ty + 0.235, z - 0.04, arena, 10);   // its cap
   }
 }
 mergeStatic(arena, null);
