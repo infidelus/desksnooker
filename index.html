@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 98;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 99;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1801,7 +1801,7 @@ const crowd = (() => {
     s.hairC = hairCols[Math.floor(rnd() * hairCols.length)];
     const r = rnd();
     s.hair = female ? (r < 0.4 ? 'long' : r < 0.7 ? 'collar' : r < 0.85 ? 'bun' : 'short') : (r < 0.5 ? 'short' : r < 0.68 ? 'receding' : r < 0.8 ? 'collar' : r < 0.9 ? 'cap' : 'none');
-    s.face = female ? [0, 1, 4, 5][Math.floor(rnd() * 4)] : [0, 2, 3, 5, 6, 7][Math.floor(rnd() * 6)];
+    s.faceNo = female ? [0, 1, 4, 5][Math.floor(rnd() * 4)] : [0, 2, 3, 5, 6, 7][Math.floor(rnd() * 6)];   // (which of the eight faces: s.face is the way the seat faces)
     s.jacket = rnd() < 0.3; s.specs = rnd() < 0.22;
     s.build = female ? 0.9 + rnd() * 0.12 : 0.97 + rnd() * 0.18; s.size = (female ? 0.92 : 0.97) + rnd() * 0.1;
     s.turn = (rnd() - 0.5) * 0.7; s.nod = (rnd() - 0.4) * 0.25;
@@ -1812,7 +1812,7 @@ const crowd = (() => {
     shirt: mk(shirtGeo, people.filter(s => s.jacket)), specs: mk(glassesGeo, people.filter(s => s.specs), new THREE.MeshLambertMaterial({ color: 0x1a1a1a })),
   };
   for (const [k, g] of Object.entries(HAIR)) parts['hair_' + k] = mk(g, people.filter(s => s.hair === k));
-  headGeo.setAttribute('aFace', new THREE.InstancedBufferAttribute(new Float32Array(people.map(s => 7 - s.face)), 1));
+  headGeo.setAttribute('aFace', new THREE.InstancedBufferAttribute(new Float32Array(people.map(s => 7 - s.faceNo)), 1));
   const m4 = new THREE.Matrix4(), hm = new THREE.Matrix4(), qq = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1), c = new THREE.Color();
   seats.forEach((s, i) => { qq.setFromAxisAngle(Y_AXIS, s.face); m4.compose(new THREE.Vector3(s.x, s.y, s.z), qq, one); backs.setMatrixAt(i, m4); pads.setMatrixAt(i, m4); });
   people.forEach(s => {
