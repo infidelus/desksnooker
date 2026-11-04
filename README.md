@@ -49,7 +49,7 @@ This reads `index.src.html`, embeds each `@@ASSET:name@@` file from `assets/` an
   | Male coach | Ryan | 0% |
   | Female coach | Olivia | 0% |
 
-- The referees' calls are now made with [Chatterbox](https://github.com/resemble-ai/chatterbox) Multilingual V3 (MIT), cloned from the referees' original Airvoz recordings (male: its normal settings; female: `cfg_weight` 1.0 and `exaggeration` 0.3, which keep her accent British). The coaches are still the Airvoz recordings.
+- The male referee's calls are made with [Chatterbox](https://github.com/resemble-ai/chatterbox) Multilingual V3 (MIT), cloned from his original Airvoz recordings. The female referee is her original Airvoz recordings, with the players' names and match calls made with Chatterbox (cloning drifted her accent, so the rest are kept as recorded). The coaches are the Airvoz recordings.
 
 ## Licence
 
