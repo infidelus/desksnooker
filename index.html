@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 105;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 106;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2599,8 +2599,22 @@ const voiceTokens = { ref: 0, coach: 0 };
 // A new call cuts off the last one, unless it's queued `after` it
 const voiceEnd = { ref: 0, coach: 0 }, voiceChain = { ref: Promise.resolve(), coach: Promise.resolve() };
 const RUN_ON = new Set(['tobreak', 'ischamp']);
+const voicePending = {};
+// Where a name and the words after it were recorded as one sentence ("Lewis Ambrose to break"), play that instead of the two
+function joinCalls(name, keys) {
+  const tab = VOICE_TABLE && VOICE_TABLE[name], out = [];
+  for (let i = 0; i < keys.length; i++) {
+    const k = String(keys[i]), next = String(keys[i + 1]);
+    const whole = /^name\d+$/.test(k) && tab && (next === 'tobreak' ? tab[k + 'tb'] && k + 'tb' : next === 'ischamp' ? tab[k + 'ch'] && k + 'ch' : null);
+    if (whole) { out.push(whole); i++; } else out.push(keys[i]);
+  }
+  return out;
+}
 function playVoice(name, keys, channel, keep, after = false) {
+  keys = joinCalls(name, keys);
   const token = after ? voiceTokens[channel] : ++voiceTokens[channel];
+  // (a new call stops anything this voice had lined up but not yet started, so calls never get mixed together)
+  if (!after && audio) for (const p of (voicePending[channel] || []).splice(0)) if (p.t > audio.currentTime + 0.01) { try { p.src.stop(); } catch (e) { /* already done */ } }
   const run = async () => {
     const buf = await voiceBuffer(name);
     let t = Math.max(audio.currentTime + 0.05, after ? voiceEnd[channel] + 0.5 : 0);
@@ -2612,6 +2626,7 @@ function playVoice(name, keys, channel, keep, after = false) {
       const g = audio.createGain(); g.gain.value = 1.0;
       src.connect(g).connect(audio.destination);
       src.start(t, Math.max(0, clip[0] - 0.02), clip[1] + 0.08);
+      (voicePending[channel] = voicePending[channel] || []).push({ src, t });
       if (keep) keep.push(src);
       // (a pause between calls, but none before words that run on from a name: "Priya Lal to break")
       const gap = RUN_ON.has(keys.map(String)[keys.map(String).indexOf(k) + 1]) ? 0.0 : 0.35;
@@ -2794,6 +2809,10 @@ function setupPlayers() {
     const i = settings.opponent;
     game.players = [{ name: 'You', score: 0, ai: null }, { name: AI_PLAYERS[i].name, score: 0, ai: i }];
     match.bestOf = +settings.bestOf;
+  } else if (mode === 'champ' && champWatching()) {
+    const f = champFinalToWatch(), A = champ.entrants[f.a], B = champ.entrants[f.b];
+    game.players = [{ name: A.name, score: 0, ai: A.ai }, { name: B.name, score: 0, ai: B.ai }];
+    match.bestOf = champBestOf(champ.round);
   } else if (mode === 'champ') {
     const m = champMatch();
     const other = m ? champ.entrants[m.a === champ.you ? m.b : m.a] : null;
@@ -2819,7 +2838,7 @@ function startMatch() {
   if (settings.mode === 'champ' && champ && champ.curFrames) { match.frames = champ.curFrames.slice(); match.breaker = (match.frames[0] + match.frames[1]) % 2; }
   newFrame();
   // A fresh match against the computer, in the championship or between two of you here starts with the toss
-  const fresh = match.frames[0] + match.frames[1] === 0 && (settings.mode === 'ai' || settings.mode === 'two' || (settings.mode === 'champ' && champMatch()));
+  const fresh = match.frames[0] + match.frames[1] === 0 && (settings.mode === 'ai' || settings.mode === 'two' || (settings.mode === 'champ' && champMatch()));   // (no toss for a final you're watching)
   if (fresh && !startMatch.noToss) startToss(); else { hideCoin(); if (!startMatch.noToss) announceFrame(); }
 }
 
@@ -2835,9 +2854,9 @@ function newFrame() {
   Object.assign(game, { freeBall: false, nominated: null, current: match.breaker, ballOn: 'red', breakScore: 0, highBreak: settings.mode === 'practice' ? game.highBreak : 0, frameOver: false, respotted: false, practiceOn: null, stale: { hist: [], count: 0, stage: 0 } });
   ballInHand = true;
   if (settings.mode === 'practice') setMessage('Practice: break off from the D.');
-  else if (settings.mode === 'champ' && !champMatch()) setMessage(champ ? champSummary() : 'Choose New championship to start.');
+  else if (settings.mode === 'champ' && !champLive()) setMessage(champ ? champSummary() : 'Choose New championship to start.');
   else setMessage(`${game.players[game.current].name} to break. Cue ball in hand in the D.`);
-  if (settings.mode === 'champ' && champMatch()) applause(4, 0.6);   // the players come out
+  if (settings.mode === 'champ' && champLive()) applause(4, 0.6);   // the players come out
 }
 
 // The referee's spoken name for a player, if there is one: the computer players by name, and Player one and Player
@@ -2851,7 +2870,7 @@ function voiceName(i) {
 // The referee announces each frame as it starts ("Second frame. Your opponent to break."). In two-player games here,
 // where "you" could be either of you, just the frame.
 function announceFrame(after = false) {
-  if (!['ai', 'two', 'champ'].includes(settings.mode) || (settings.mode === 'champ' && !champMatch())) return;
+  if (!['ai', 'two', 'champ'].includes(settings.mode) || (settings.mode === 'champ' && !champLive())) return;
   const n = match.frames[0] + match.frames[1] + 1;
   if (n > 7) return;
   const keys = ['frame' + n], b = game.players[match.breaker], who = voiceName(match.breaker);
@@ -2871,7 +2890,7 @@ function frameWon(w, text) {
     match.over = true;
     if (match.bestOf > 1 || settings.mode === 'champ') sayAfter('framematch');
     if (match.bestOf > 1) msg += ` Match to ${winner.name === 'You' ? 'you' : winner.name}, ${match.frames[w]}–${match.frames[1 - w]}.`;
-    if (settings.mode === 'champ') msg = champRecordResult(w, msg);
+    if (settings.mode === 'champ') msg = champWatching() ? champRecordFinal(w, msg) : champRecordResult(w, msg);
     else msg += ' Press A (or C) for a new match.';
   } else {
     if (settings.mode === 'champ') { champ.curFrames = match.frames.slice(); saveChamp(); }
@@ -2910,6 +2929,10 @@ function showStats(msg) {
     if (next) {
       const opp = champ.entrants[next.a === champ.you ? next.b : next.a].name;
       buttons.push({ t: `Next round: ${roundName(champ.round).toLowerCase()} v ${opp}`, act: () => { setChoice(null); continueAfterFrame(); } });
+    } else if (champFinalToWatch()) {
+      const f = champFinalToWatch();
+      buttons.push({ t: `Watch the final: ${champ.entrants[f.a].name} v ${champ.entrants[f.b].name}`, act: () => { setChoice(null); watchFinal(); } });
+      buttons.push({ t: 'Skip to the result', act: () => { setChoice(null); skipFinal(); } });
     } else {
       buttons.push({ t: 'See the championship draw', act: () => { setChoice(null); if (renderer.xr.isPresenting) { menuPage = 'draw'; toggleMenu(true); } else showPane('draw'); } });
       buttons.push({ t: 'New championship', act: () => { setChoice(null); newChampionship(); } });
@@ -3303,6 +3326,7 @@ function aiShouldConcede(profile) {
 function concedeFrame() {
   if (!isMatch() || game.frameOver || anyMoving()) return;
   const human = game.players.findIndex(p => p.ai === null && !p.remote);
+  if (human < 0 && settings.mode !== 'two') return;                     // (you're watching: it isn't yours to concede)
   const quitter = settings.mode === 'two' ? game.current : human;
   if (settings.mode === 'online') netSend({ t: 'concede' });
   say('conceded');
@@ -3423,7 +3447,10 @@ function endShotRules(s) {
   } else {
     if (game.ballOn === 'colour') game.ballOn = redsLeft() > 0 ? 'red' : 2;
     // At the end of a break the referee gives it, with the player's name ("Priya Lal, 46"); yours he's already counted aloud
-    if (game.breakScore > 0) { const who = voiceName(game.current); if (who) sayAfter(who, String(game.breakScore)); }
+    if (game.breakScore > 0) {
+      const who = voiceName(game.current) || (['ai', 'champ'].includes(settings.mode) ? 'name' + (24 + game.current) : null);   // (you're Player one)
+      if (who) sayAfter(who, String(game.breakScore));
+    }
     game.current = 1 - game.current; game.breakScore = 0;
     setMessage(`${game.players[game.current].name} to play.`);
     checkStalemate();
@@ -3639,6 +3666,36 @@ function champMatch() {
   if (!champ || champ.champion !== null) return null;
   return champ.rounds[champ.round].find(m => (m.a === champ.you || m.b === champ.you) && m.winner === null) || null;
 }
+// After you're knocked out: the final, between two computer players, still to be played (and whether you're watching it)
+function champFinalToWatch() {
+  if (!champ || champ.champion !== null || champMatch() || champ.round !== champRounds() - 1) return null;
+  const f = champ.rounds[champ.round][0];
+  return f && f.winner === null && f.a !== champ.you && f.b !== champ.you ? f : null;
+}
+const champWatching = () => !!(champ && champ.watching && champFinalToWatch());
+// A championship match is on at the table: yours, or the final you're watching
+const champLive = () => champMatch() || (champWatching() ? champFinalToWatch() : null);
+function watchFinal() {
+  champ.watching = true; champ.curFrames = [0, 0]; saveChamp();
+  startMatch();
+}
+function skipFinal() {
+  champFinishRound(); champ.watching = false; saveChamp(); renderDraw();
+  const w = champ.entrants[champ.champion];
+  if (w.ai !== null && w.ai !== undefined && w.ai < 24) sayAfter('name' + w.ai, 'ischamp');
+  setMessage(`${w.name} won the championship.`);
+}
+// The final you watched is over: record it, and crown the champion
+function champRecordFinal(w, msg) {
+  const f = champFinalToWatch();
+  if (!f) return msg;
+  f.fa = match.frames[0]; f.fb = match.frames[1]; f.winner = w === 0 ? f.a : f.b;
+  champ.champion = f.winner; champ.watching = false; champ.curFrames = [0, 0];
+  saveChamp(); renderDraw(); showTrophy();
+  const winner = champ.entrants[f.winner];
+  if (winner.ai !== null && winner.ai !== undefined && winner.ai < 24) sayAfter('name' + winner.ai, 'ischamp');
+  return `${msg} ${winner.name} is the champion!`;
+}
 
 function simFrames(a, b, bestOf) {
   const ra = champ.entrants[a].ai === null ? 1500 : AI_PLAYERS[champ.entrants[a].ai].rating;
@@ -3671,11 +3728,12 @@ function champRecordResult(w, msg) {
   m.winner = youWon ? champ.you : (m.a === champ.you ? m.b : m.a);
   champ.curFrames = [0, 0];
   champFinishRound();
-  if (!youWon) while (champ.champion === null) champFinishRound();
+  if (!youWon) while (champ.champion === null && champ.round < champRounds() - 1) champFinishRound();   // (up to the final, which you can watch)
   saveChamp(); renderDraw();
   if (champ.champion === champ.you) { showTrophy(); addHonour(champ.level || settings.champLevel); sayAfter('champion'); return `${msg} You are the champion!`; }
   if (!youWon && champ.champion === m.winner) { const ai = champ.entrants[m.winner].ai; if (ai !== null && ai !== undefined && ai < 24) sayAfter('name' + ai, 'ischamp'); }   // (you lost the final)
-  if (!youWon) return `${msg} You're out. ${champ.entrants[champ.champion].name} won the championship.`;
+  if (!youWon && champ.champion !== null) return `${msg} You're out. ${champ.entrants[champ.champion].name} won the championship.`;
+  if (!youWon) { const f = champFinalToWatch(); return `${msg} You're out. The final: ${champ.entrants[f.a].name} v ${champ.entrants[f.b].name}.`; }
   const next = champMatch();
   const opp = champ.entrants[next.a === champ.you ? next.b : next.a].name;
   return `${msg} Through to the ${roundName(champ.round).toLowerCase()} against ${opp}. Press A (or C) to play.`;
@@ -4302,7 +4360,7 @@ function updateAI(dt) {
     // need snookers with few reds left), pub players only when it's hopeless. Nobody gives up easily in a frame that
     // would lose them the match.
     if (aiShouldConcede(profile)) {
-      say('conceded');
+      sayAfter('conceded');                                              // (after whatever the referee's still saying)
       frameWon(1 - game.current, `${game.players[game.current].name} concedes.`);
       return;
     }
@@ -5776,13 +5834,18 @@ function surfaceUnder(q) {
   if (ax < L / 2 + CUSH_W + RAIL_W && az < W / 2 + CUSH_W + RAIL_W) return CUSH_H + 0.004;
   return -Infinity;                                                       // beyond the table: nothing to rest on
 }
-function keepHandOnTop(rig, clearance = 0.007) {
+function keepHandOnTop(rig, clearance = 0.007, overBalls = false) {
   table.updateMatrixWorld(); rig.root.updateMatrixWorld(true);
   const inv = table.matrixWorld.clone().invert();
   let lift = 0;
   for (const n of HAND_POINTS) {
     const b = rig.bones[n]; if (!b) continue;
     const q = b.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
+    // (the computer's hand also keeps above any ball under it, when it bridges over one)
+    if (overBalls) for (const ball of balls) if (ball.onTable && !ball.falling && ball !== cueBall && Math.hypot(ball.x - q.x, ball.z - q.z) < R + 0.012) {
+      const top = R + Math.sqrt(Math.max(0, (R + 0.012) ** 2 - (ball.x - q.x) ** 2 - (ball.z - q.z) ** 2));
+      lift = Math.max(lift, top + 0.004 - q.y);
+    }
     // (the bones run through the middle of the hand: the palm and wrist have more flesh under them than a fingertip)
     const flesh = /metacarpal|wrist/.test(n) ? 0.015 : /proximal/.test(n) ? 0.011 : clearance;
     lift = Math.max(lift, surfaceUnder(q) + Math.max(clearance, flesh) - q.y);
@@ -6192,7 +6255,7 @@ function poseOppHands(tip, quat, bridgeTip) {
     const palmNow = new THREE.Vector3();
     for (const n of ['index-finger-metacarpal', 'middle-finger-metacarpal', 'ring-finger-metacarpal', 'pinky-finger-metacarpal']) palmNow.add(br.bones[n].getWorldPosition(new THREE.Vector3()));
     const palmY = palmNow.multiplyScalar(0.25).applyMatrix4(inv).y;
-    shift.y = Math.max(shift.y, base + 0.015 - palmY);
+    shift.y = Math.max(shift.y, (under ? 2 * R + 0.006 : base) + 0.015 - palmY);   // (over a ball, the palm stays above it)
     br.root.position.add(shift);
   }
   // When the cue is high (over the rail, or over a ball), it's a raised bridge: the fingertips reach down to the
@@ -6212,7 +6275,7 @@ function poseOppHands(tip, quat, bridgeTip) {
       br.root.quaternion.premultiply(q);
     }
   }
-  keepHandOnTop(br);
+  keepHandOnTop(br, 0.007, true);
   // Last of all: nothing of the hand but the V may touch the cue. With the hand tipped forward, its heel and wrist
   // come up, and if they're in line with the cue it runs through them: turn the hand about the V until they're clear.
   {
@@ -6225,17 +6288,17 @@ function poseOppHands(tip, quat, bridgeTip) {
       // running underneath: only the palm lying below the cue is allowed
       const body = ['wrist', 'thumb-metacarpal', 'index-finger-metacarpal', 'middle-finger-metacarpal', 'ring-finger-metacarpal', 'pinky-finger-metacarpal',
         'middle-finger-phalanx-proximal', 'ring-finger-phalanx-proximal', 'pinky-finger-phalanx-proximal'].map(at).filter(Boolean);
-      const w = at('wrist'), mm = at('middle-finger-metacarpal');
-      if (w && mm) body.push(w.clone().addScaledVector(w.clone().sub(mm), 0.6));   // (the end of the forearm)
+      const w = at('wrist'), mm = at('middle-finger-metacarpal'), arm = [];
+      if (w && mm) for (const f of [0.0, 0.3, 0.6, 0.9]) arm.push(w.clone().addScaledVector(w.clone().sub(mm), f));   // (the wrist and the end of the forearm)
       const side = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
       let worst = 0;
       for (const q of thumb) {
         const along = q.clone().sub(tip).dot(dir), onAxis = tip.clone().addScaledVector(dir, along);
         worst = Math.max(worst, TIP_R + CUE_TAPER * Math.max(0, -along) + 0.007 - q.distanceTo(onAxis));
       }
-      for (const q of body) {
+      for (const q of [...body, ...arm]) {
         const along = q.clone().sub(tip).dot(dir), onAxis = tip.clone().addScaledVector(dir, along);
-        const r = TIP_R + CUE_TAPER * Math.max(0, -along) + 0.013;               // the cue's thickness there, and the hand's
+        const r = TIP_R + CUE_TAPER * Math.max(0, -along) + (arm.includes(q) ? 0.03 : 0.013);   // the cue's thickness there, and the hand's (the forearm is thicker)
         if (q.y > onAxis.y - 0.006) worst = Math.max(worst, r - Math.abs(q.clone().sub(onAxis).dot(side)));
       }
       return worst;
@@ -6264,7 +6327,7 @@ function poseOppHands(tip, quat, bridgeTip) {
     }
     if (fix.a || fix.sh) {
       apply(fix.a, fix.sh);
-      keepHandOnTop(br);
+      keepHandOnTop(br, 0.007, true);
     }
   }
 }
@@ -6288,7 +6351,7 @@ function updateOpponent(dt) {
     const ext = need === 'spider' || need === 'swan' ? reachNeed.ext : need;
     opp.gripBack = need === 'none' ? 1.0 : 1.32 + (ext === 'long' ? 0.9 : ext === 'extension' ? 0.45 : 0);
   }
-  const need = aiCue.visible ? opp.need || 'none' : 'none';
+  const need = aiCue.visible || opp.fade > 0.01 ? opp.need || 'none' : 'none';   // (the rest stays while the hands fade away)
   setExtension(aiCue, need);
   if (need === 'none' || opp.fade <= 0.01) { placeRest(oppRest, 'none'); return; }
   const cdir = new THREE.Vector3(0, 1, 0).applyQuaternion(aiCue.quaternion);
@@ -7452,7 +7515,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { champBestOf, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { champBestOf, champFinalToWatch, watchFinal, skipFinal, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
