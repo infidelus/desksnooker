@@ -49,7 +49,7 @@ This reads `index.src.html`, embeds each `@@ASSET:name@@` file from `assets/` an
   | Male coach | Ryan | 0% |
   | Female coach | Olivia | 0% |
 
-- The referees' players' names and match calls ("Priya Lal, 46", "Frame and match", "Ladies and gentlemen: your champion!") were made with [Chatterbox](https://github.com/resemble-ai/chatterbox) (MIT), cloned from the referees' own Airvoz recordings.
+- The referees' calls are now made with [Chatterbox](https://github.com/resemble-ai/chatterbox) Multilingual V3 (MIT), cloned from the referees' original Airvoz recordings (male: its normal settings; female: `cfg_weight` 1.0 and `exaggeration` 0.3, which keep her accent British). The coaches are still the Airvoz recordings.
 
 ## Licence
 
