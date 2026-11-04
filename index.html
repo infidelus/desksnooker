@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 102;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 103;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3609,9 +3609,14 @@ function endOfFrameScores(prefix) {
 // =====================================================================
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 // Matches get longer towards the final: counted back from it
+// A championship's matches follow the match length chosen when it started, with the final two frames longer
+// (championships started before that choice existed keep their old short or long matches)
 function champBestOf(round) {
-  const fromEnd = champRounds() - 1 - round, long = (champ && champ.length || settings.champLength) === 'long';
-  return fromEnd === 0 ? (long ? 5 : 3) : (long ? 3 : 1);
+  const final = champRounds() - 1 - round === 0;
+  const b = champ && champ.bestOf ? +champ.bestOf : null;
+  if (b) return final ? b + 2 : b;
+  const long = (champ && champ.length || settings.champLength) === 'long';
+  return final ? (long ? 5 : 3) : (long ? 3 : 1);
 }
 
 function newChampionship() {
@@ -3622,7 +3627,7 @@ function newChampionship() {
   const you = entrants.findIndex(e => e.ai === null);
   const first = [];
   for (let i = 0; i < size; i += 2) first.push({ a: i, b: i + 1, fa: 0, fb: 0, winner: null });
-  champ = { size, entrants, you, round: 0, rounds: [first], champion: null, curFrames: [0, 0], length: settings.champLength, level: settings.champLevel };
+  champ = { size, entrants, you, round: 0, rounds: [first], champion: null, curFrames: [0, 0], bestOf: +settings.bestOf, level: settings.champLevel };
   saveChamp();
   settings.mode = 'champ'; saveSettings();
   startMatch();
@@ -4707,8 +4712,6 @@ const playRows = [
   { label: 'Champ. format', btns: [
     { t: () => '8 players', on: () => +settings.champSize === 8, act: () => { settings.champSize = 8; } },
     { t: () => '16 players', on: () => +settings.champSize !== 8, act: () => { settings.champSize = 16; } },
-    { t: () => 'Short matches', on: () => settings.champLength === 'short', act: () => { settings.champLength = 'short'; } },
-    { t: () => 'Long matches', on: () => settings.champLength === 'long', act: () => { settings.champLength = 'long'; } },
   ] },
 ];
 const tableRows = [
@@ -7449,7 +7452,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { champBestOf, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
