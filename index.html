@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 107;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 108;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2867,6 +2867,9 @@ function voiceName(i) {
   if (p && p.ai !== null && p.ai !== undefined && p.ai < 24 && VOICE_TABLE && VOICE_TABLE.male && VOICE_TABLE.male['name' + p.ai]) return 'name' + p.ai;
   return null;
 }
+function breakCallName(i) {
+  return voiceName(i) || (['ai', 'champ'].includes(settings.mode) ? 'name' + (24 + i) : null);
+}
 // The referee announces each frame as it starts ("Second frame. Your opponent to break."). In two-player games here,
 // where "you" could be either of you, just the frame.
 function announceFrame(after = false) {
@@ -3406,9 +3409,13 @@ function endShotRules(s) {
     them.score += j.penalty;
     const blackFinal = game.ballOn === 7 && (potted.includes(colourByValue(7)) || game.respotted);
     for (const b of potted) if (b.kind === 'colour' && !blackFinal) respot(b);
+    // A foul in the middle of a break: the referee gives the break as well, then the penalty to the other player
+    // ("Foul. Player one, 31. Lewis Ambrose, 4."); without a break it's just "Foul. Four."
+    const brk = game.breakScore, brkWho = breakCallName(meI), penWho = breakCallName(1 - meI);
+    const foulCall = word => say(word, ...(brk > 0 && brkWho ? [brkWho, String(brk), ...(penWho ? [penWho] : [])] : []), j.penalty);
     game.current = 1 - game.current; game.breakScore = 0;
     if (game.ballOn === 'red' || game.ballOn === 'colour') game.ballOn = redsLeft() > 0 ? 'red' : 2;
-    if (blackFinal) { say('foul', j.penalty); endOfFrameScores(`Foul on the black: ${j.penalty} to ${them.name}.`); return; }
+    if (blackFinal) { foulCall('foul'); endOfFrameScores(`Foul on the black: ${j.penalty} to ${them.name}.`); return; }
     // Foul and a miss (Pro rules): failing to hit the ball on without a good enough attempt.
     // Not called when the player at fault needs snookers.
     const deficit = them.score - me.score;
@@ -3416,7 +3423,7 @@ function endShotRules(s) {
     const miss = settings.rules === 'pro' && j.missedOn && !needsSnookers && (s.clearView || s.minOnDist > 0.12);
     me.misses = miss && s.clearView ? (me.misses || 0) + 1 : 0;
     if (miss) st.misses++;
-    say(miss ? 'miss' : 'foul', j.penalty);
+    foulCall(miss ? 'miss' : 'foul');
     if (me.misses >= 3) {
       // the referee speaks to the player who missed, except against the computer, where it's always to you
       sayAfter(settings.mode !== 'two' && (them.ai === null || them.ai === undefined) ? 'awardyou' : 'awardopp');
@@ -3448,7 +3455,7 @@ function endShotRules(s) {
     if (game.ballOn === 'colour') game.ballOn = redsLeft() > 0 ? 'red' : 2;
     // At the end of a break the referee gives it, with the player's name ("Priya Lal, 46"); yours he's already counted aloud
     if (game.breakScore > 0) {
-      const who = voiceName(game.current) || (['ai', 'champ'].includes(settings.mode) ? 'name' + (24 + game.current) : null);   // (you're Player one)
+      const who = breakCallName(game.current);                         // (you're Player one)
       if (who) sayAfter(who, String(game.breakScore));
     }
     game.current = 1 - game.current; game.breakScore = 0;
@@ -7515,7 +7522,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { champBestOf, champFinalToWatch, watchFinal, skipFinal, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { breakCallName, champBestOf, champFinalToWatch, watchFinal, skipFinal, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
