@@ -40,16 +40,7 @@ This reads `index.src.html`, embeds each `@@ASSET:name@@` file from `assets/` an
 
 - [three.js](https://threejs.org/) for 3D rendering.
 - Hand models from the [WebXR Input Profiles](https://github.com/immersive-web/webxr-input-profiles) generic hand assets.
-- Referee and coach voices made with [Airvoz](https://airvoz.com/). To record new lines in the same voices, use these Airvoz voices and rates:
-
-  | Voice | Airvoz voice | Rate |
-  | --- | --- | --- |
-  | Male referee | Thomas | 10% |
-  | Female referee | Abbi | 10% |
-  | Male coach | Ryan | 0% |
-  | Female coach | Olivia | 0% |
-
-- The male referee's calls are made with [Chatterbox](https://github.com/resemble-ai/chatterbox) Multilingual V3 (MIT), cloned from his original Airvoz recordings (exaggeration 0.25, CFG 0.25, temperature 0.2; numbers written out in words, and each player's name made in whole sentences such as "Lewis Ambrose to break"). The female referee is recorded in Airvoz (Abbi, 10%), with the numbers written out in words and each player's name in whole sentences such as "Lewis Ambrose to break" (cloning her with Chatterbox drifted her accent). The coaches are the Airvoz recordings.
+- The referees and the female coach are made with [ElevenLabs](https://elevenlabs.io/) (Multilingual v2 model, on a paid plan), using voices from its voice library: **Mark** (male referee), **Olivia** (female referee) and **Trinity X** (female coach). Numbers are written out in words, and each player's name is made in whole sentences such as "Lewis Ambrose to break". The male coach is recorded in [Airvoz](https://airvoz.com/) (Ryan, rate 0%).
 
 ## Licence
 
