@@ -351,7 +351,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 109;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 110;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1461,6 +1461,168 @@ function drawRoomBoard() {
   });
   const ex = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.15), new THREE.MeshBasicMaterial({ map: exitTex, color: new THREE.Color(1.4, 1.4, 1.4) }));
   ex.rotation.y = Math.PI / 2; ex.position.set(wx + 0.02, 2.4, 2.4); room.add(ex);
+}
+// ---------- the baulk end of the club: a dartboard, notice board, team photo, a table and a coat stand ----------
+{
+  const wx = -ROOM_X, face = o => { o.rotation.y = Math.PI / 2; return o; };   // (things on this wall face along +x, into the room)
+  const plane = (w, h, mat, x, y, z) => { const m = face(new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat)); m.position.set(x, y, z); room.add(m); return m; };
+  // 1. The dartboard in its cabinet, with a chalk scoreboard beside it and the oche on the floor
+  {
+    const z0 = -2.1, y0 = 1.73;
+    const boardTex = paintTexture(512, 512, (g, w, h) => {
+      const c = w / 2, k = 256 / 225;
+      g.fillStyle = '#111'; g.fillRect(0, 0, w, h);
+      const order = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+      const ring = (r0, r1, cols) => order.forEach((n, i) => {
+        const a0 = -Math.PI / 2 + (i - 0.5) * Math.PI / 10, a1 = a0 + Math.PI / 10;
+        g.fillStyle = cols[i % 2]; g.beginPath(); g.arc(c, c, r1 * k, a0, a1); g.arc(c, c, r0 * k, a1, a0, true); g.closePath(); g.fill();
+      });
+      ring(15.9, 170, ['#141414', '#e9dfc4']);
+      ring(162, 170, ['#c4161c', '#1c7a3a']); ring(99, 107, ['#c4161c', '#1c7a3a']);
+      g.fillStyle = '#1c7a3a'; g.beginPath(); g.arc(c, c, 15.9 * k, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#c4161c'; g.beginPath(); g.arc(c, c, 6.35 * k, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#b8b8b8'; g.lineWidth = 1.5; for (const r of [15.9, 99, 107, 162, 170]) { g.beginPath(); g.arc(c, c, r * k, 0, Math.PI * 2); g.stroke(); }
+      g.fillStyle = '#e8e8e8'; g.font = '700 26px Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      order.forEach((n, i) => { const a = -Math.PI / 2 + i * Math.PI / 10; g.fillText(String(n), c + Math.cos(a) * 196 * k * 0.98, c + Math.sin(a) * 196 * k * 0.98); });
+    });
+    box(0.03, 0.78, 0.78, M.darkWood, wx + 0.015, y0, z0);                                   // the cabinet's back
+    for (const s of [-1, 1]) {                                                                // its doors, open
+      const door = box(0.36, 0.78, 0.025, M.wood, wx + 0.03 + 0.17 * Math.sin(0.9), y0, z0 + s * (0.39 + 0.17 * Math.cos(0.9)));
+      door.rotation.y = s * 0.9 - (s > 0 ? Math.PI : 0) + Math.PI / 2 * 0;
+      door.position.set(wx + 0.03 + 0.18 * Math.cos(Math.PI / 2 - 0.65), y0, z0 + s * (0.39 + 0.18 * Math.sin(Math.PI / 2 - 0.65)));
+      door.rotation.y = -s * 0.65;
+      const sb = face(new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.6), new THREE.MeshLambertMaterial({ color: 0x1d2420 })));
+      sb.position.copy(door.position).add(new THREE.Vector3(0.016, 0, 0)); sb.rotation.y = Math.PI / 2 - s * 0.65; room.add(sb);
+    }
+    const b = cyl(0.225, 0.225, 0.04, M.black, wx + 0.05, y0, z0, room, 32); b.rotation.z = Math.PI / 2;
+    plane(0.45, 0.45, new THREE.MeshLambertMaterial({ map: boardTex }), wx + 0.071, y0, z0);
+    for (const [dy, dz] of [[0.05, 0.02], [0.12, -0.04], [-0.06, 0.09]]) {                 // three darts
+      const d = cyl(0.004, 0.003, 0.12, M.silver, wx + 0.13, y0 + dy, z0 + dz, room, 6); d.rotation.z = Math.PI / 2 - 0.15;
+      const fl = box(0.04, 0.035, 0.002, new THREE.MeshLambertMaterial({ color: 0xc4161c }), wx + 0.2, y0 + dy + 0.01, z0 + dz);
+    }
+    // (scrawled in chalk mid-game: uneven figures, the old scores crossed through, a sum in the margin, smudges)
+    const chalkTex = paintTexture(256, 320, (g, w, h) => {
+      g.fillStyle = '#1d2420'; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(230,230,220,${0.02 + rnd() * 0.04})`; g.beginPath(); g.ellipse(rnd() * w, rnd() * h, 10 + rnd() * 40, 4 + rnd() * 12, rnd() * 3, 0, Math.PI * 2); g.fill(); }   // old rubbing out
+      const chalk = (a = 0.85) => `rgba(238,236,226,${a})`;
+      // Figures drawn as chalk strokes (not a font, so they look written by hand on every computer): each glyph is a
+      // few strokes in a unit box, drawn with a wobble, a slant and a slightly different size every time
+      const ell = (cx, cy, rx, ry) => Array.from({ length: 15 }, (_, i) => { const t = i / 14 * Math.PI * 2 - Math.PI / 2; return [cx + Math.cos(t) * rx, cy + Math.sin(t) * ry]; });
+      const GLYPH = {
+        0: [ell(0.5, 0.5, 0.38, 0.5)], 1: [[[0.25, 0.22], [0.55, 0], [0.55, 1]]],
+        2: [[[0.1, 0.25], [0.3, 0.02], [0.7, 0.02], [0.9, 0.28], [0.75, 0.55], [0.1, 1], [0.95, 0.98]]],
+        3: [[[0.1, 0.1], [0.5, 0], [0.85, 0.2], [0.6, 0.47], [0.35, 0.5]], [[0.6, 0.47], [0.92, 0.7], [0.7, 0.98], [0.1, 0.9]]],
+        4: [[[0.7, 1], [0.7, 0], [0.05, 0.7], [0.97, 0.7]]], 5: [[[0.9, 0], [0.2, 0], [0.15, 0.45], [0.6, 0.4], [0.92, 0.66], [0.7, 0.98], [0.1, 0.9]]],
+        6: [[[0.8, 0.05], [0.4, 0.1], [0.12, 0.55], [0.2, 0.95], [0.65, 0.98], [0.88, 0.72], [0.6, 0.5], [0.15, 0.65]]],
+        7: [[[0.05, 0], [0.95, 0], [0.4, 1]]], 8: [ell(0.5, 0.25, 0.3, 0.24), ell(0.5, 0.72, 0.36, 0.27)],
+        9: [[[0.85, 0.35], [0.5, 0.5], [0.15, 0.3], [0.4, 0.02], [0.8, 0.1], [0.85, 0.35], [0.75, 1]]],
+        D: [[[0.1, 0], [0.1, 1]], [[0.1, 0], [0.6, 0.05], [0.9, 0.5], [0.6, 0.95], [0.1, 1]]], A: [[[0, 1], [0.5, 0], [1, 1]], [[0.22, 0.6], [0.78, 0.6]]],
+        V: [[[0, 0], [0.5, 1], [1, 0]]], E: [[[0.9, 0], [0.1, 0], [0.1, 1], [0.9, 1]], [[0.1, 0.5], [0.7, 0.5]]],
+        K: [[[0.1, 0], [0.1, 1]], [[0.9, 0], [0.1, 0.55], [0.9, 1]]], '-': [[[0.1, 0.5], [0.9, 0.5]]],
+        '?': [[[0.15, 0.25], [0.4, 0.02], [0.8, 0.1], [0.8, 0.35], [0.5, 0.55], [0.5, 0.75]], [[0.5, 0.92], [0.52, 0.97]]],
+      };
+      const scrawl = (text, x, y, size, a = 0.85) => {                 // y is the baseline, as for text
+        let cx = x;
+        for (const ch of text) {
+          const hgt = size * 0.72 * (0.9 + rnd() * 0.2), wid = hgt * 0.62, slant = 0.12 + rnd() * 0.1, top = y - hgt + (rnd() - 0.5) * 4;
+          g.strokeStyle = chalk(a * (0.75 + rnd() * 0.25)); g.lineWidth = 2.6 + rnd() * 1.2; g.lineCap = g.lineJoin = 'round';
+          for (const stroke of GLYPH[ch] || []) {
+            g.beginPath();
+            stroke.forEach(([u, v], i) => { const px = cx + u * wid + (1 - v) * hgt * slant + (rnd() - 0.5) * 2.2, py = top + v * hgt + (rnd() - 0.5) * 2.2; i ? g.lineTo(px, py) : g.moveTo(px, py); });
+            g.stroke();
+          }
+          cx += wid * (1.25 + rnd() * 0.2);
+        }
+        return cx;
+      };
+      const line = (x0, y0, x1, y1, wd = 2.5, a = 0.75) => { g.strokeStyle = chalk(a); g.lineWidth = wd; g.lineCap = 'round'; g.beginPath(); g.moveTo(x0, y0);
+        g.quadraticCurveTo((x0 + x1) / 2 + (rnd() - 0.5) * 6, (y0 + y1) / 2 + (rnd() - 0.5) * 6, x1, y1); g.stroke(); };
+      line(w / 2 + 4, 18, w / 2 - 3, h - 16, 3); line(18, 66, w - 16, 70, 3);
+      scrawl('DAVE', 26, 52, 30); scrawl('KEV', 150, 50, 30);
+      const col = (x, list) => list.forEach((t, i) => {
+        const y = 104 + i * 38 + (rnd() - 0.5) * 6, end = scrawl(t, x + (rnd() - 0.5) * 10, y, 30 + (rnd() - 0.5) * 6);
+        if (i < list.length - 1) line(x - 4, y - 8 + (rnd() - 0.5) * 4, end + 4, y - 12 + (rnd() - 0.5) * 4, 2.2, 0.7);   // crossed through
+      });
+      col(30, ['501', '441', '360', '301', '217']); col(152, ['501', '455', '397', '316']);
+      scrawl('-84', 182, 290, 20, 0.55); scrawl('?', 70, 296, 24, 0.5);               // a sum in the corner, and someone's question
+    });
+    box(0.03, 0.56, 0.44, M.wood, wx + 0.015, y0 - 0.05, z0 + 0.86);
+    plane(0.4, 0.5, new THREE.MeshLambertMaterial({ map: chalkTex }), wx + 0.032, y0 - 0.05, z0 + 0.86);
+    box(0.04, 0.012, 0.6, M.brass, wx + 2.37, 0.006, z0);                                      // the oche, 2.37 m from the board
+  }
+  // 2. A notice board by the door, with the club's notices pinned to it
+  {
+    const z0 = 1.05, y0 = 1.55;
+    const corkTex = paintTexture(512, 384, (g, w, h) => {
+      g.fillStyle = '#b08850'; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 6000; i++) { g.fillStyle = `rgba(${rnd() < 0.5 ? '90,60,30' : '230,200,150'},${0.15 + rnd() * 0.2})`; g.fillRect(rnd() * w, rnd() * h, 2, 2); }
+      const note = (x, y, nw, nh, rot, bg, lines) => {
+        g.save(); g.translate(x, y); g.rotate(rot); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(4, 4, nw, nh); g.fillStyle = bg; g.fillRect(0, 0, nw, nh);
+        g.fillStyle = '#222'; lines.forEach(([t, f], i) => { g.font = f; g.fillText(t, 10, 28 + i * 24); });
+        g.fillStyle = '#c4161c'; g.beginPath(); g.arc(nw / 2, 8, 6, 0, Math.PI * 2); g.fill(); g.restore();
+      };
+      note(24, 24, 210, 160, -0.04, '#f6f2e6', [['LEAGUE FIXTURES', '700 18px Georgia'], ['Tue  v  The Cue & Cushion', '14px Georgia'], ['Thu  at Baulk Line S.C.', '14px Georgia'], ['Tue  v  Red Lion "B"', '14px Georgia'], ['Teams on the board Sunday', 'italic 14px Georgia']]);
+      note(262, 30, 220, 130, 0.05, '#fff6a8', [['HANDICAP KNOCKOUT', '700 18px Georgia'], ['Entries by Friday, £2', '14px Georgia'], ['1. D. Hart   2. T. Gill', '14px Georgia'], ['3. K. Dunmore  4. ________', '14px Georgia']]);
+      note(40, 210, 200, 140, 0.03, '#e8f0f8', [['CLUB RULES', '700 18px Georgia'], ['No jeans in the match room', '14px Georgia'], ['No drinks on the table rail', '14px Georgia'], ['Settle your table fees', '14px Georgia'], ['at the bar. Ta.', '14px Georgia']]);
+      note(268, 190, 210, 150, -0.06, '#ffffff', [['LOST', '700 22px Georgia'], ['One cue, two-piece,', '14px Georgia'], ['ash, in brown case.', '14px Georgia'], ['Answers to "Old Faithful"', 'italic 14px Georgia'], ['See Owen behind the bar', '14px Georgia']]);
+    });
+    box(0.03, 0.68, 0.88, M.darkWood, wx + 0.015, y0, z0);
+    plane(0.8, 0.6, new THREE.MeshLambertMaterial({ map: corkTex }), wx + 0.032, y0, z0);
+  }
+  // 3. A framed photograph of the club's team, in sepia
+  {
+    const z0 = -3.5, y0 = 1.7;
+    const photoTex = paintTexture(512, 384, (g, w, h) => {
+      g.fillStyle = '#efe4cc'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#6a5034'; g.fillRect(36, 36, w - 72, h - 110);
+      const grad = g.createLinearGradient(0, 36, 0, h - 74); grad.addColorStop(0, '#8a6e4c'); grad.addColorStop(1, '#4a3420'); g.fillStyle = grad; g.fillRect(40, 40, w - 80, h - 118);
+      g.fillStyle = '#2e2014'; g.fillRect(150, 200, 212, 46);                                 // the table they're stood behind, and the cup
+      g.fillStyle = '#c8a66a'; g.fillRect(244, 172, 24, 30); g.fillRect(250, 160, 12, 14);
+      for (const [row, n, y, sc] of [[0, 6, 130, 1], [1, 5, 190, 1.1]]) for (let i = 0; i < n; i++) {
+        const x = 256 + (i - (n - 1) / 2) * 62;
+        g.fillStyle = '#2a1c10'; g.beginPath(); g.ellipse(x, y + 46 * sc, 26 * sc, 40 * sc, 0, Math.PI, 0); g.fill(); g.fillRect(x - 26 * sc, y + 46 * sc, 52 * sc, 40);
+        g.fillStyle = '#c8a880'; g.beginPath(); g.arc(x, y, 16 * sc, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#3a2814'; g.beginPath(); g.arc(x, y - 6 * sc, 16 * sc, Math.PI, 0); g.fill();
+      }
+      g.fillStyle = 'rgba(80,50,20,0.25)'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#3a2814'; g.textAlign = 'center'; g.font = 'italic 26px Georgia, serif'; g.fillText('Long Pot S.C. · League Champions 1962', w / 2, h - 34);
+    });
+    box(0.04, 0.5, 0.64, M.gold, wx + 0.02, y0, z0);
+    plane(0.56, 0.42, new THREE.MeshBasicMaterial({ map: photoTex, color: 0xb0b0b0 }), wx + 0.042, y0, z0);
+  }
+  // 4. A small pub table in the corner, two chairs and two pints
+  {
+    const tx = wx + 0.75, tz = -ROOM_Z + 0.8;
+    cyl(0.32, 0.32, 0.03, M.darkWood, tx, 0.72, tz, room, 28);
+    cyl(0.03, 0.03, 0.7, M.black, tx, 0.36, tz, room, 10);
+    for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2; const f = box(0.36, 0.03, 0.05, M.black, tx + Math.cos(a) * 0.14, 0.02, tz + Math.sin(a) * 0.14); f.rotation.y = -a; }
+    const glass = new THREE.MeshStandardMaterial({ color: 0xeef6fa, roughness: 0.05, transparent: true, opacity: 0.3, envMap: roomEnv, depthWrite: false });
+    const beer = new THREE.MeshStandardMaterial({ color: 0x9a5a14, roughness: 0.2, transparent: true, opacity: 0.85, envMap: roomEnv });
+    const head = new THREE.MeshLambertMaterial({ color: 0xf2ead8 });
+    for (const [dx, dz, full] of [[-0.1, 0.06, 0.13], [0.12, -0.05, 0.06]]) {
+      cyl(0.05, 0.05, 0.004, new THREE.MeshLambertMaterial({ color: 0xc8102e }), tx + dx, 0.737, tz + dz, room, 20);           // a beer mat
+      const g1 = cyl(0.04, 0.034, 0.15, glass, tx + dx, 0.815, tz + dz, room, 18, true); g1.userData.keep = true;
+      const b1 = cyl(0.038, 0.033, full, beer, tx + dx, 0.741 + full / 2, tz + dz, room, 18); b1.userData.keep = true;
+      cyl(0.038, 0.038, 0.012, head, tx + dx, 0.741 + full + 0.006, tz + dz, room, 18);
+    }
+    for (const [cx, cz, a] of [[tx + 0.55, tz, -Math.PI / 2], [tx, tz + 0.55, Math.PI]]) {
+      const ch = new THREE.Group(); ch.position.set(cx, 0, cz); ch.rotation.y = a; room.add(ch);
+      box(0.42, 0.05, 0.42, M.darkWood, 0, 0.46, 0, ch); box(0.42, 0.42, 0.04, M.darkWood, 0, 0.7, -0.19, ch);
+      for (const [lx, lz] of [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]]) box(0.04, 0.44, 0.04, M.darkWood, lx, 0.22, lz, ch);
+      box(0.36, 0.06, 0.36, M.leather, 0, 0.5, 0.01, ch);
+    }
+  }
+  // 5. A coat stand by the door, with a coat and a flat cap on it
+  {
+    const cx = wx + 0.32, cz = ROOM_Z - 0.32;                       // (right in the corner, clear of the door)
+    cyl(0.025, 0.03, 1.8, M.darkWood, cx, 0.9, cz, room, 10);
+    for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2; const f = box(0.42, 0.03, 0.05, M.darkWood, cx + Math.cos(a) * 0.17, 0.02, cz + Math.sin(a) * 0.17); f.rotation.y = -a; }
+    for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2; const hk = cyl(0.008, 0.008, 0.14, M.brass, cx + Math.cos(a) * 0.06, 1.72, cz + Math.sin(a) * 0.06, room, 6); hk.rotation.set(Math.sin(a) * 0.8, 0, -Math.cos(a) * 0.8); }
+    const coat = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.24, 0.95, 14, 1, true), new THREE.MeshLambertMaterial({ color: 0x3a2e24, side: THREE.DoubleSide }));
+    coat.position.set(cx + 0.08, 1.25, cz); coat.scale.set(0.7, 1, 1.1); room.add(coat);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x5a5040 }));
+    cap.scale.set(1, 0.45, 1.1); cap.position.set(cx - 0.05, 1.78, cz - 0.06); room.add(cap);
+  }
 }
 const roomClock = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 256;
