@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 113;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 114;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3528,7 +3528,7 @@ function endShot() {
 function finishShot(s) {
   s.cueEnd = { x: cueBall.x, z: cueBall.z };
   endShotRules(s);
-  if (!choice) announceTouching();
+  if (!choice || choice.nominate) announceTouching();   // (the touching call comes with a request to declare a colour)
   if (settings.mode === 'coach') coachAfterShot(s);
   if (!xrMode && cueBall.onTable) desk.recentre = true;   // on the desktop, the view glides back to the cue ball
   followCueBall();                                         // in the headset, the table comes round to you
@@ -3733,14 +3733,18 @@ function askNomination(onlyIfSnookered) {
   // Snookered as the rules have it: no colour can be hit on both edges without a red in the way
   // (being able to clip a thin edge of one isn't enough)
   const snookered = snookeredOnAll(balls, 'colour');
-  if (onlyIfSnookered && !snookered) return;
+  // With the cue ball touching a colour after a red, the rules say the referee must ask which colour you're on
+  const touchingColour = cueBall.onTable ? colours.find(b => b.onTable && !b.falling && Math.hypot(b.x - cueBall.x, b.z - cueBall.z) < 2 * R + 0.0005) || null : null;
+  if (onlyIfSnookered && !snookered && !touchingColour) return;
   const buttons = colours.filter(b => b.onTable).map(b => ({ t: cap(b.name), ball: b, act: () => {
     game.nominated = b; setChoice(null); setMessage(`${p.name} ${p.name === 'You' ? 'nominate' : 'nominates'} the ${b.name}.`);
     if (settings.mode === 'online') netSend({ t: 'nominate', ball: balls.indexOf(b) });
   } }));
-  if (!snookered) buttons.push({ t: 'Cancel', act: () => setChoice(null) });
+  if (!snookered && !touchingColour) buttons.push({ t: 'Cancel', act: () => setChoice(null) });
   const how = renderer.xr.isPresenting ? ' Point at the ball on the table and pull the trigger, or choose below.' : ' Click the ball on the table, or choose below.';
-  setChoice({ title: 'Nominate a colour', nominate: true, text: (snookered
+  setChoice({ title: touchingColour ? 'Touching ball: declare a colour' : 'Nominate a colour', nominate: true, text: (touchingColour
+    ? `The cue ball is touching the ${touchingColour.name}, so you must say which colour you are on. Play away from the ${touchingColour.name}: if it's the one you declare, you needn't hit another ball.`
+    : snookered
     ? 'You are snookered on the colours, so you must say which one you are playing. You must hit it first, and only it will score.'
     : 'Say which colour you are playing. You must hit it first, and only it will score.') + how, buttons });
 }
