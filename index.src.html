@@ -33,6 +33,9 @@
   }
   #panel.collapsed > :not(header) { display: none; }
   header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .namerow { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 14px 0 4px; }
+  .namerow input { font: inherit; font-size: 16px; width: 14em; max-width: 100%; padding: 7px 10px; background: transparent; color: var(--chalk); border: 1px solid var(--line); border-radius: 6px; }
+  .namerow .note { flex-basis: 100%; margin: 0; }
   .netrow { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
   .netrow input { font: inherit; font-size: 18px; letter-spacing: 0.2em; width: 8.5em; padding: 8px 10px; background: transparent; color: var(--chalk); border: 1px solid var(--line); border-radius: 6px; }
   .netcode { font-family: var(--display); font-size: 34px; letter-spacing: 0.12em; color: var(--brass); }
@@ -150,6 +153,7 @@
   <section class="pane" data-pane="play">
     <h2>Play</h2>
     <div class="rows" id="playRows"></div>
+    <div class="namerow"><label for="yourName">Your name</label><input id="yourName" maxlength="24" placeholder="For the trophy" autocomplete="off" spellcheck="false"><span class="note">Engraved on the championship cup in the club's trophy cabinet when you win. Kept in this browser only.</span></div>
   </section>
 
   <section class="pane" data-pane="table" hidden>
@@ -335,7 +339,7 @@ const DEFAULTS = {
   mode: 'practice', aim: true, pockets: 'standard', power: 1.3, bridge: 0.25,
   hand: 'right', room: 'auto', stickFeel: 'table', lockTable: false, follow: 'aim', cueStyle: 'pro', rests: 'off', restCue: 'separate', height: 178, watchOpponent: true, legs: true, sound: true, tableY: 0.76,
   opponent: 8, bestOf: 3, reds: 15, champLevel: 'amateur', champLength: 'short', champSize: 16,
-  referee: 'male', coachVoice: 'male', hands: 'medium', figure: true, rules: 'pro',
+  referee: 'male', coachVoice: 'male', hands: 'medium', figure: true, rules: 'pro', yourName: '',
 };
 let settings = { ...DEFAULTS };
 let savedSettings = {};
@@ -351,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 110;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 111;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1284,12 +1288,15 @@ function championshipRoll() {
   const base = [[1972, 'Declan Royle'], [1981, 'Vida Steves'], [2001, 'Lionel Van Sourin'], [2019, 'Lewis Ambrose']];
   let mine = [];
   try { mine = JSON.parse(localStorage.getItem(HONOURS_KEY) || '[]'); } catch (e) { /* none */ }
-  return base.concat(mine.map(m => [m.y, m.level === 'pro' ? 'infidelus (pro)' : 'infidelus']));
+  // Each win keeps the name that was set when it was won; older wins (and any won before a name was set) use today's name
+  const now = (settings.yourName || '').trim() || 'Your name here';
+  return base.concat(mine.map(m => { const who = m.name || now; return [m.y, m.level === 'pro' ? `${who} (pro)` : who]; }));
 }
 function addHonour(level) {
   try {
     const mine = JSON.parse(localStorage.getItem(HONOURS_KEY) || '[]');
-    mine.push({ y: new Date().getFullYear(), level });
+    const name = (settings.yourName || '').trim();
+    mine.push(name ? { y: new Date().getFullYear(), level, name } : { y: new Date().getFullYear(), level });
     localStorage.setItem(HONOURS_KEY, JSON.stringify(mine));
   } catch (e) { /* storage blocked: it just isn't kept */ }
   if (engraveChampionship) engraveChampionship(championshipRoll());
@@ -5179,6 +5186,18 @@ function renderRows(hostId, rows, prefix) {
     });
     div.appendChild(btns); host.appendChild(div);
   });
+}
+// Your name for the trophy: typed on the page (there's no keyboard in the headset menu)
+{
+  const box = document.getElementById('yourName');
+  if (box) {
+    box.value = settings.yourName || '';
+    box.addEventListener('input', () => {
+      settings.yourName = box.value.replace(/[\u0000-\u001f]/g, '').slice(0, 24);
+      saveSettings();
+      if (engraveChampionship) engraveChampionship(championshipRoll());
+    });
+  }
 }
 function renderSettingsPanel() { renderRows('playRows', playRows, 'play'); renderRows('coachRows', coachRows, 'coachrow'); renderRows('tableRows', tableRows, 'tbl'); }
 
