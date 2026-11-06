@@ -40,7 +40,7 @@ This reads `index.src.html`, embeds each `@@ASSET:name@@` file from `assets/` an
 
 - [three.js](https://threejs.org/) for 3D rendering.
 - Hand models from the [WebXR Input Profiles](https://github.com/immersive-web/webxr-input-profiles) generic hand assets.
-- The referees and the female coach are made with [ElevenLabs](https://elevenlabs.io/) (Multilingual v2 model, on a paid plan), using voices from its voice library: **Mark** (male referee), **Olivia** (female referee) and **Trinity X** (female coach). Numbers are written out in words, and each player's name is made in whole sentences such as "Lewis Ambrose to break". The male coach is recorded in [Airvoz](https://airvoz.com/) (Ryan, rate 0%).
+- The referees and coaches are made with [ElevenLabs](https://elevenlabs.io/) (Multilingual v2 model, on a paid plan), using voices from its voice library: **Mark** (male referee), **Olivia** (female referee), **Hamish** (male coach) and **Trinity X** (female coach). Numbers are written out in words, and each player's name is made in whole sentences such as "Lewis Ambrose to break".
 
 ## Licence
 
