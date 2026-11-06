@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 111;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 112;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3730,7 +3730,9 @@ function askNomination(onlyIfSnookered) {
   if (!isMatch() || game.ballOn !== 'colour' || game.frameOver || !cueBall.onTable) return;
   const p = game.players[game.current];
   if (p.ai !== null || p.remote) return;
-  const snookered = !canHitDirect(cloneBalls(balls), onPredicate('colour'));
+  // Snookered as the rules have it: no colour can be hit on both edges without a red in the way
+  // (being able to clip a thin edge of one isn't enough)
+  const snookered = snookeredOnAll(balls, 'colour');
   if (onlyIfSnookered && !snookered) return;
   const buttons = colours.filter(b => b.onTable).map(b => ({ t: cap(b.name), ball: b, act: () => {
     game.nominated = b; setChoice(null); setMessage(`${p.name} ${p.name === 'You' ? 'nominate' : 'nominates'} the ${b.name}.`);
@@ -4593,7 +4595,7 @@ function updateAI(dt) {
       const i = sim.ctx.firstHit ? sim.list.indexOf(sim.ctx.firstHit) : -1;
       if (i > 0 && balls[i].kind === 'colour') {
         game.nominated = balls[i];
-        if (!canHitDirect(cloneBalls(balls), onPredicate('colour'))) setMessage(`${game.players[game.current].name} nominates the ${balls[i].name}.`);
+        if (snookeredOnAll(balls, 'colour')) setMessage(`${game.players[game.current].name} nominates the ${balls[i].name}.`);
       }
     }
     // Swerve is hard: the weaker the player, the less exact the side and cue angle
