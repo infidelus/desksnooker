@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 112;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 113;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2928,7 +2928,7 @@ function snookeredOnAll(list, ballOn) {
       const a = Math.atan2(dz, dx) + side * Math.asin(Math.min(1, 2 * R * 0.999 / d));
       const ex = cue.x + Math.cos(a) * d * Math.cos(Math.asin(Math.min(1, 2 * R * 0.999 / d)));
       const ez = cue.z + Math.sin(a) * d * Math.cos(Math.asin(Math.min(1, 2 * R * 0.999 / d)));
-      return pathClear(list, cue.x, cue.z, ex, ez, onBalls, 2 * R - 0.0005);   // only balls not on can block
+      return pathClear(list, cue.x, cue.z, ex, ez, onBalls, CLEAR_PATH);   // only balls not on can block
     });
     if (ok) return false;
   }
@@ -3977,6 +3977,10 @@ function simulate(base, dirX, dirZ, speed, side, height, tracePath, elev = 0, st
 }
 
 // Is the straight line from (x0,z0) to (x1,z1) clear of every ball except those listed?
+// A path counts as clear only if the cue ball misses every other ball by a whisker (0.2 mm), as the aim guide
+// shows it. (It once let the balls overlap by half a millimetre, so a red right beside the cue ball could
+// seem to leave a thin edge of a colour in view when every line to it really clipped the red.)
+const CLEAR_PATH = 2 * R + 0.0002;
 function pathClear(list, x0, z0, x1, z1, skip, clearance) {
   const ex = x1 - x0, ez = z1 - z0, l2 = ex * ex + ez * ez;
   for (const b of list) {
@@ -4043,9 +4047,9 @@ function potOptions(list, pred, sigma) {
       ax /= d1; az /= d1;
       const cosT = ax * ux + az * uz;
       if (cosT < 0.17) continue;
-      if (!pathClear(list, cue.x, cue.z, gx, gz, [cue, t], 2 * R - 0.0005)) continue;
+      if (!pathClear(list, cue.x, cue.z, gx, gz, [cue, t], CLEAR_PATH)) continue;
       if (!cushionsClear(cue.x, cue.z, gx, gz)) continue;                    // (a jaw in the way)
-      if (!hanging && !pathClear(list, t.x, t.z, aimX, aimZ, [cue, t], 2 * R - 0.0005)) continue;
+      if (!hanging && !pathClear(list, t.x, t.z, aimX, aimZ, [cue, t], CLEAR_PATH)) continue;
       const sigLat = sigma * (d2 * d1 / (2 * R * cosT) + 0.3 * d1) + 0.002;
       let prob = erf(w / (sigLat * Math.SQRT2));
       if (cosT < 0.4) prob *= cosT / 0.4;
@@ -4074,7 +4078,7 @@ function canHitDirect(list, pred, withCushions = false) {
     for (const off of [0, 0.9, -0.9, 0.5, -0.5]) {
       const tx = t.x + px * off * 2 * R - dx / d * Math.sqrt(Math.max(0, 1 - off * off)) * 2 * R;
       const tz = t.z + pz * off * 2 * R - dz / d * Math.sqrt(Math.max(0, 1 - off * off)) * 2 * R;
-      if (pathClear(list, cue.x, cue.z, tx, tz, [cue, t], 2 * R - 0.0005) && (!withCushions || cushionsClear(cue.x, cue.z, tx, tz))) return true;
+      if (pathClear(list, cue.x, cue.z, tx, tz, [cue, t], CLEAR_PATH) && (!withCushions || cushionsClear(cue.x, cue.z, tx, tz))) return true;
     }
   }
   return false;
@@ -4094,7 +4098,7 @@ function viewOfBallsOn(list, pred) {
       const tx = t.x + px * off * 2 * R - dx / d * Math.sqrt(Math.max(0, 1 - off * off)) * 2 * R;
       const tz = t.z + pz * off * 2 * R - dz / d * Math.sqrt(Math.max(0, 1 - off * off)) * 2 * R;
       all++;
-      if (pathClear(list, cue.x, cue.z, tx, tz, [cue, t], 2 * R - 0.0005)) clear++;
+      if (pathClear(list, cue.x, cue.z, tx, tz, [cue, t], CLEAR_PATH)) clear++;
     }
   }
   return all ? clear / all : 0;
@@ -6920,7 +6924,7 @@ function* findDouble(ballOn) {
       const [ux, uz] = unit(m[0] - t.x, m[1] - t.z);
       if ((ax === 'z' ? uz * Math.sign(c) : ux * Math.sign(c)) <= 0.2) continue;
       const gx = t.x - ux * 2 * R, gz = t.z - uz * 2 * R;
-      if (!pathClear(base, cue.x, cue.z, gx, gz, [cue, t], 2 * R - 0.0005)) continue;
+      if (!pathClear(base, cue.x, cue.z, gx, gz, [cue, t], CLEAR_PATH)) continue;
       const [dx, dz] = unit(gx - cue.x, gz - cue.z);
       if (dx * ux + dz * uz < 0.3) continue;
       for (const o of [0, -1, 1, -2, 2]) for (const sp of [2.0, 2.8, 3.6]) {
