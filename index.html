@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 114;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 115;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -6497,7 +6497,30 @@ function poseOppHands(tip, quat, bridgeTip) {
       for (const q of [...body, ...arm]) {
         const along = q.clone().sub(tip).dot(dir), onAxis = tip.clone().addScaledVector(dir, along);
         const r = TIP_R + CUE_TAPER * Math.max(0, -along) + (arm.includes(q) ? 0.03 : 0.013);   // the cue's thickness there, and the hand's (the forearm is thicker)
-        if (q.y > onAxis.y - 0.006) worst = Math.max(worst, r - Math.abs(q.clone().sub(onAxis).dot(side)));
+        // Below the cue is allowed only if the flesh on top of the bone stays clear of the cue's underside: on the rail,
+        // with the butt raised, the heel of the hand and the wrist sit just under the cue and their tops reached into it
+        const cueR = TIP_R + CUE_TAPER * Math.max(0, -along), flesh = arm.includes(q) ? 0.03 : 0.011;
+        const up = q.y + flesh - (onAxis.y - cueR);
+        if (up > 0) worst = Math.max(worst, Math.min(up, r - Math.abs(q.clone().sub(onAxis).dot(side))));
+      }
+      // The bones only mark the hand's skeleton: the flesh round them, the ball of the thumb above all, is a good deal
+      // fatter. So test the skin itself too: no part of it away from the V may sink into the cue.
+      if (!br.skinPts) {
+        let mesh = null; br.root.traverse(o => { if (o.isSkinnedMesh && !mesh) mesh = o; });
+        const n = mesh ? mesh.geometry.attributes.position.count : 0, step = Math.max(1, Math.floor(n / 300));
+        br.skinPts = { mesh, idx: Array.from({ length: Math.floor(n / step) }, (_, i) => i * step) };
+      }
+      const { mesh, idx } = br.skinPts;
+      if (mesh) {
+        const vee = veeAt(), v = new THREE.Vector3();
+        for (const i of idx) {
+          mesh.getVertexPosition(i, v); v.applyMatrix4(mesh.matrixWorld);
+          if (v.distanceTo(vee) < 0.025) continue;                      // (the V itself cradles the cue)
+          const along = v.clone().sub(tip).dot(dir);
+          if (along > 0.005 || along < -0.6) continue;
+          const d = v.distanceTo(tip.clone().addScaledVector(dir, along));
+          worst = Math.max(worst, TIP_R + CUE_TAPER * Math.max(0, -along) + 0.001 - d);
+        }
       }
       return worst;
     };
