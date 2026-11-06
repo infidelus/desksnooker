@@ -49,7 +49,7 @@ This reads `index.src.html`, embeds each `@@ASSET:name@@` file from `assets/` an
   | Male coach | Ryan | 0% |
   | Female coach | Olivia | 0% |
 
-- The male referee's calls are made with [Chatterbox](https://github.com/resemble-ai/chatterbox) Multilingual V3 (MIT), cloned from his original Airvoz recordings (exaggeration 0.25, CFG 0.25, temperature 0.2; numbers written out in words, and each player's name made in whole sentences such as "Lewis Ambrose to break"). The female referee is her original Airvoz recordings, with the players' names and match calls made with Chatterbox (cloning drifted her accent, so the rest are kept as recorded). The coaches are the Airvoz recordings.
+- The male referee's calls are made with [Chatterbox](https://github.com/resemble-ai/chatterbox) Multilingual V3 (MIT), cloned from his original Airvoz recordings (exaggeration 0.25, CFG 0.25, temperature 0.2; numbers written out in words, and each player's name made in whole sentences such as "Lewis Ambrose to break"). The female referee is recorded in Airvoz (Abbi, 10%), with the numbers written out in words and each player's name in whole sentences such as "Lewis Ambrose to break" (cloning her with Chatterbox drifted her accent). The coaches are the Airvoz recordings.
 
 ## Licence
 
