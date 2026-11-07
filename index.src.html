@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 118;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 119;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -6101,7 +6101,7 @@ const REST_INFO = {
   extension: { name: 'the rest and an extension', aim: 0.06, speed: 4.4, spin: 0.55, head: 0.057 },
   long:      { name: 'the long rest and an extended cue', aim: 0.09, speed: 4.0, spin: 0.45, head: 0.057 },
   spider:    { name: 'the spider',                 aim: 0.08, speed: 4.2, spin: 0.5,  head: 0.11 },
-  swan:      { name: 'the swan',                   aim: 0.08, speed: 4.2, spin: 0.5,  head: 0.08 },
+  swan:      { name: 'the swan',                   aim: 0.08, speed: 4.2, spin: 0.5,  head: 0.1045 },  // (the cue lies in the fork at the end of its neck, well up between the arms)
 };
 const restsOn = () => settings.rests === 'guided' || settings.rests === 'visual';
 // How much less a computer player likes a safety that needs each rest
@@ -6500,8 +6500,9 @@ function poseOppHands(tip, quat, bridgeTip) {
         // Below the cue is allowed only if the flesh on top of the bone stays clear of the cue's underside: on the rail,
         // with the butt raised, the heel of the hand and the wrist sit just under the cue and their tops reached into it
         const cueR = TIP_R + CUE_TAPER * Math.max(0, -along), flesh = arm.includes(q) ? 0.03 : 0.011;
-        const up = q.y + flesh - (onAxis.y - cueR);
-        if (up > 0) worst = Math.max(worst, Math.min(up, r - Math.abs(q.clone().sub(onAxis).dot(side))));
+        // (on the cloth the palm lies properly under the cue, so there only what's above the cue's axis counts)
+        const up = base > 0 ? q.y + flesh - (onAxis.y - cueR) : q.y - (onAxis.y - 0.006);
+        if (up > 0) worst = Math.max(worst, Math.min(base > 0 ? up : 1, r - Math.abs(q.clone().sub(onAxis).dot(side))));
       }
       // The bones only mark the hand's skeleton: the flesh round them, the ball of the thumb above all, is a good deal
       // fatter. So test the skin itself too: no part of it away from the V may sink into the cue.
@@ -6511,7 +6512,9 @@ function poseOppHands(tip, quat, bridgeTip) {
         br.skinPts = { mesh, idx: Array.from({ length: Math.floor(n / step) }, (_, i) => i * step) };
       }
       const { mesh, idx } = br.skinPts;
-      if (mesh) {
+      // (only on the rail, where the hand lies flat and the raised cue runs close over it: on the cloth the cue rests
+      // in the V with the thumb and forefinger snug round it, and this would push the hand off the cue)
+      if (mesh && base > 0) {
         const vee = veeAt(), v = new THREE.Vector3();
         for (const i of idx) {
           mesh.getVertexPosition(i, v); v.applyMatrix4(mesh.matrixWorld);
@@ -6536,7 +6539,8 @@ function poseOppHands(tip, quat, bridgeTip) {
       fix = { key, a: 0, sh: 0 };
       if (cueHits() > 0) {
         let best = null;
-        for (const sh of [0, 0.01, -0.01, 0.02, -0.02, 0.03, -0.03, 0.045, -0.045, 0.06, -0.06, 0.08, -0.08, 0.1, -0.1])
+        // (sliding the hand off to the side of the cue is a rail bridge: on the cloth the cue stays in the V)
+        for (const sh of base > 0 ? [0, 0.01, -0.01, 0.02, -0.02, 0.03, -0.03, 0.045, -0.045, 0.06, -0.06, 0.08, -0.08, 0.1, -0.1] : [0])
           for (const a of [0, 0.12, -0.12, 0.24, -0.24, 0.36, -0.36, 0.5, -0.5, 0.7, -0.7]) {
             apply(a, sh);
             const h = cueHits(), score = h > 0 ? 100 + h : Math.abs(a) * 0.05 + Math.abs(sh);
