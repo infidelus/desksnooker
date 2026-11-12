@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 125;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 126;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4805,6 +4805,19 @@ function placeCueBehindBall(c, dirX, dirZ, gap, side, height, elev = 0) {
     const back = (c === aiCue ? 0.03 : 0.01) + BRIDGE_BACK;
     e = Math.max(elev + CUE_REST, Math.atan2(REST_INFO[restKind].head + 0.006 - (R + height * R), back));
   }
+  // The computer bridging on the cushion rail: the hand lying on the rail raises the cue, which runs between its thumb
+  // and forefinger a little above the wood, so the cue rises at least that much from the ball to the hand
+  const clothRoom = Math.abs(cueBall.x - dirX * (0.27 + R)) < L / 2 - 0.01 && Math.abs(cueBall.z - dirZ * (0.27 + R)) < W / 2 - 0.01;   // (the whole hand on the cloth)
+  if (c === aiCue && restKind === 'none' && !clothRoom) {
+    const cy = R + height * R;
+    for (let d = 0.10; d <= 0.30; d += 0.02) {                         // (the nearest spot on the rail: a short bridge, the butt well up)
+      const x = cueBall.x - dirX * (d + R), z = cueBall.z - dirZ * (d + R), ax = Math.abs(x), az = Math.abs(z);
+      if ((ax > L / 2 + CUSH_W || az > W / 2 + CUSH_W) && ax < L / 2 + CUSH_W + RAIL_W - 0.03 && az < W / 2 + CUSH_W + RAIL_W - 0.03) {
+        e = Math.min(0.6, Math.max(e, Math.atan2(CUSH_H + 0.004 + 0.042 - cy, d + R)));
+        break;
+      }
+    }
+  }
   const f = Math.sqrt(Math.max(0, 1 - side * side - height * height));
   const d3 = new THREE.Vector3(dirX * Math.cos(e), -Math.sin(e), dirZ * Math.cos(e));
   const contact = new THREE.Vector3(cueBall.x + (-dirX * f - dirZ * side) * R, R + height * R, cueBall.z + (-dirZ * f + dirX * side) * R);
@@ -6501,7 +6514,9 @@ function poseOppHands(tip, quat, bridgeTip) {
     const p = from.clone().addScaledVector(dir, -dist), q = p.clone().applyMatrix4(inv);
     if (!(Math.abs(q.x) < XO - 0.05 && Math.abs(q.z) < ZO - 0.05)) continue;
     // Score each spot: a ball under the hand is worst, then the cue riding high above it, then a short bridge
-    const score = (covers(q) ? 10 : 0) + Math.max(0, q.y - surfaceAt(q) - 0.06) * 20 + Math.abs(0.28 - dist) * 0.5;
+    // (and a bridge on the cloth, if there's room for one, rather than reaching back to the rail)
+    const score = (covers(q) ? 10 : 0) + Math.max(0, q.y - surfaceAt(q) - 0.06) * 20 + Math.abs(0.28 - dist) * 0.5 + (surfaceAt(q) > 0 ? 0.1 : 0)
+      + (surfaceAt(q) === 0 && surfaceAt(from.clone().addScaledVector(dir, -dist - 0.1).applyMatrix4(inv)) > 0 ? 0.25 : 0);   // (wrist and all)
     if (!best || score < best.score) best = { p, q, score };
   }
   if (best) { bp = best.p; lp = best.q; } else { bp = from.clone().addScaledVector(dir, -0.06); lp = bp.clone().applyMatrix4(inv); }
@@ -6509,15 +6524,15 @@ function poseOppHands(tip, quat, bridgeTip) {
   // Rest the palm on whatever is underneath: cloth, the top of the cushion rail, or over a ball if there's no
   // way round it. When the cue is high, the palm comes up with it and the fingertips stay down: a raised bridge.
   const base = surfaceAt(lp), under = covers(lp);
-  // On the cushion rail, with the cue running low over it: the hand lies flat on the rail, fingers forward, the thumb
-  // tucked alongside the forefinger, and the cue runs in the groove between them, as players bridge off the cushion
+  // On the cushion rail: the hand lies flat on the rail, fingers splayed forward, the thumb cocked up, and the cue runs
+  // in the V between the thumb and the forefinger's knuckle, as players bridge off the cushion
   if (base > 0 && !under) {
     // (where along the rail the cue runs about a finger's height above it, so the hand can lie flat under it)
     let rb = null;
     for (let dist = 0.32; dist >= 0.08; dist -= 0.01) {                // (the fingers reach some way forward: kept off the ball)
       const p = from.clone().addScaledVector(dir, -dist), q = p.clone().applyMatrix4(inv);
       if (!(Math.abs(q.x) < XO - 0.03 && Math.abs(q.z) < ZO - 0.03) || surfaceAt(q) <= 0 || covers(q)) continue;
-      const sc = Math.abs(q.y - surfaceAt(q) - 0.033) + Math.abs(0.24 - dist) * 0.05;
+      const sc = Math.abs(q.y - surfaceAt(q) - 0.04) + Math.abs(0.24 - dist) * 0.05;
       if (!rb || sc < rb.sc) rb = { p, q, sc };
     }
     opp.dbg = { lift: rb ? rb.q.y - base : null };
@@ -6647,8 +6662,10 @@ function poseOppHands(tip, quat, bridgeTip) {
   }
 }
 const RAIL_YAW = 0.45;
+const RAIL_V = true;            // (the cue in the V of a cocked thumb on top of the forefinger's knuckle, the hand flat on the rail)
 function railBridgeHand(br, tip, dir, bp, base, inv) {
-  br.setPose('rail');
+  br.setPose(RAIL_V ? 'bridge' : 'rail');
+  const gA = RAIL_V ? 'thumb-phalanx-proximal' : 'thumb-phalanx-distal';
   const down = new THREE.Vector3(0, -1, 0), fwd = new THREE.Vector3(dir.x, 0, dir.z).normalize();
   br.place(br.F, br.N, fwd, down, bp);
   const at = n => { br.root.updateMatrixWorld(true); return br.bones[n].getWorldPosition(new THREE.Vector3()); };
@@ -6657,8 +6674,8 @@ function railBridgeHand(br, tip, dir, bp, base, inv) {
   const ix = at('index-finger-tip').sub(at('index-finger-phalanx-proximal')); ix.y = 0; ix.normalize();
   const q = new THREE.Quaternion().setFromAxisAngle(UP, Math.atan2(ix.clone().cross(fwd).y, ix.dot(fwd)) + RAIL_YAW);
   br.root.position.sub(bp).applyQuaternion(q).add(bp); br.root.quaternion.premultiply(q);
-  // Slide it sideways so the cue lies in the groove between the thumb and forefinger
-  const g = at('index-finger-phalanx-proximal').add(at('thumb-phalanx-distal')).multiplyScalar(0.5);
+  // Slide it sideways so the cue lies in the V between the thumb and forefinger
+  const g = at('index-finger-phalanx-proximal').add(at(gA)).multiplyScalar(0.5);
   const onCue = tip.clone().addScaledVector(dir, g.clone().sub(tip).dot(dir)), shift = onCue.sub(g); shift.y = 0;
   br.root.position.add(shift);
   // ...and rest the palm on the rail
@@ -6668,7 +6685,7 @@ function railBridgeHand(br, tip, dir, bp, base, inv) {
   keepHandOnTop(br, 0.007, true);
   // With the cue higher over the rail, the hand tents up on its fingertips until the cue rests on it
   {
-    const g = at('index-finger-phalanx-proximal').add(at('thumb-phalanx-distal')).multiplyScalar(0.5);
+    const g = at('index-finger-phalanx-proximal').add(at(gA)).multiplyScalar(0.5);
     const along = g.clone().sub(tip).dot(dir), cueY = tip.y + dir.y * along, cueR = TIP_R + CUE_TAPER * Math.max(0, -along);
     const rise = cueY - cueR - (g.y + 0.010);
     if (rise > 0.003) {
@@ -6684,8 +6701,8 @@ function railBridgeHand(br, tip, dir, bp, base, inv) {
       keepHandOnTop(br, 0.007, true);
     }
   }
-  // The cue rests on the thumb and against the side of the forefinger, never in them: slide the hand a little
-  // sideways if that clears it, and failing that lift it the last few millimetres off the rail
+  // The cue rests in the V and nowhere else may it touch the hand: slide the hand back along the cue (where the cue
+  // runs higher), a few millimetres to the side, or turn it a little about the V, until it's clear
   if (!br.skinPts) {
     let mesh = null; br.root.traverse(o => { if (o.isSkinnedMesh && !mesh) mesh = o; });
     const n = mesh ? mesh.geometry.attributes.position.count : 0, step = Math.max(1, Math.floor(n / 300));
@@ -6696,8 +6713,10 @@ function railBridgeHand(br, tip, dir, bp, base, inv) {
   const into = () => {
     br.root.updateMatrixWorld(true);
     const v = new THREE.Vector3(); let worst = 0;
+    const vee = RAIL_V ? at('index-finger-phalanx-proximal').add(at(gA)).multiplyScalar(0.5) : null;
     for (const i of idx) {
       mesh.getVertexPosition(i, v); v.applyMatrix4(mesh.matrixWorld);
+      if (vee && v.distanceTo(vee) < 0.022) continue;                     // (the V itself cradles the cue)
       const along = v.clone().sub(tip).dot(dir); if (along > 0) continue;
       worst = Math.max(worst, TIP_R + CUE_TAPER * -along + 0.002 - v.distanceTo(tip.clone().addScaledVector(dir, along)));
     }
@@ -6710,21 +6729,33 @@ function railBridgeHand(br, tip, dir, bp, base, inv) {
   let best = opp.handFix && opp.handFix.key === key ? opp.handFix : null;
   if (!best) {
     // (further back along the cue it runs higher over the hand; the hand slides back, or a little to the side)
-    best = { key, sh: 0, bk: 0, h: into() };
-    const cost = (h, bk, sh) => Math.max(0, h) * 100 + bk + Math.abs(sh) * 2;
-    if (best.h > 0) for (const bk of [0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06]) {
-      if (best.h <= 0 && bk >= cost(best.h, best.bk, best.sh)) break;   // (nothing further back can do better)
-      for (let k = 0; k <= 30; k++) {
-        const sh = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.005;
-        if (best.h <= 0 && cost(0, bk, sh) >= cost(best.h, best.bk, best.sh)) break;
-        br.root.position.copy(p0).addScaledVector(perp, sh).addScaledVector(fwd, -bk);
+    // (or turns a little about the V, taking the heel of the thumb out from under the cue)
+    const vee0 = at('index-finger-phalanx-proximal').add(at(gA)).multiplyScalar(0.5), q0 = br.root.quaternion.clone();
+    const put = (a, bk, sh) => {
+      const qq = new THREE.Quaternion().setFromAxisAngle(UP, a);
+      br.root.position.copy(p0).sub(vee0).applyQuaternion(qq).add(vee0).addScaledVector(perp, sh).addScaledVector(fwd, -bk);
+      br.root.quaternion.copy(q0).premultiply(qq);
+    };
+    best = { key, a: 0, sh: 0, bk: 0, h: into() };
+    const cost = (h, a, bk, sh) => Math.max(0, h) * 100 + bk + Math.abs(sh) * 2 + Math.abs(a) * 0.05;
+    if (best.h > 0) for (const a of [0, 0.15, -0.15, 0.3, -0.3, 0.45, -0.45, 0.6, -0.6]) for (const bk of [0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]) {
+      if (best.h <= 0 && cost(0, a, bk, 0) >= cost(best.h, best.a, best.bk, best.sh)) continue;
+      for (let k = 0; k <= 4; k++) {                                   // (only a little: the cue stays between thumb and finger)
+        const sh = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.004;
+        if (best.h <= 0 && cost(0, a, bk, sh) >= cost(best.h, best.a, best.bk, best.sh)) break;
+        put(a, bk, sh);
         const h = into();
-        if (cost(h, bk, sh) < cost(best.h, best.bk, best.sh)) { best.sh = sh; best.bk = bk; best.h = h; }
+        if (cost(h, a, bk, sh) < cost(best.h, best.a, best.bk, best.sh)) Object.assign(best, { a, sh, bk, h });
       }
     }
     opp.handFix = best;
+    put(0, 0, 0);
   }
-  br.root.position.copy(p0).addScaledVector(perp, best.sh).addScaledVector(fwd, -best.bk);
+  {
+    const vee0 = at('index-finger-phalanx-proximal').add(at(gA)).multiplyScalar(0.5), qq = new THREE.Quaternion().setFromAxisAngle(UP, best.a || 0);
+    br.root.position.copy(p0).sub(vee0).applyQuaternion(qq).add(vee0).addScaledVector(perp, best.sh).addScaledVector(fwd, -best.bk);
+    br.root.quaternion.premultiply(qq);
+  }
 }
 function updateOpponent(dt) {
   if (!opp.rigs.right) return;
