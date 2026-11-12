@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 121;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 122;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4926,6 +4926,7 @@ const setMode = mode => {
 function freshRestart() {
   if (settings.mode === 'ai' && !undoStack.length && !anyMoving() && match.frames[0] + match.frames[1] === 0) startMatch();
 }
+let newChampConfirm = 0;                         // (until when a second press of New championship is taken as yes)
 const playRows = [
   { label: 'Game', btns: [
     { t: () => 'Practice', on: () => settings.mode === 'practice', act: () => setMode('practice') },
@@ -4945,20 +4946,32 @@ const playRows = [
     { t: () => game.nominated ? `Nominated: ${cap(game.nominated.name)}` : 'Nominate a colour', act: () => askNomination(false) },
   ] },
   { label: 'Frame', btns: [
-    { t: () => 'New match', act: () => {
-      // (in the championship with nothing left to play, because it's over or was never started, there's no
-      // opponent to play: start a new championship rather than leave you at the table against an empty seat)
-      if (settings.mode === 'champ' && !champLive()) { newChampionship(); return; }
-      if (settings.mode === 'champ') { champ && (champ.curFrames = [0, 0]); } if (settings.mode === 'online') netSend({ t: 'newmatch' }); startMatch(); } },
+    // In the championship this is New championship (or, while you're watching the final, Skip to the result):
+    // a championship match isn't restarted. Replacing one still in progress takes a second press to confirm.
+    { t: () => settings.mode !== 'champ' ? 'New match' : champWatching() ? 'Skip to the result'
+        : newChampConfirm > performance.now() && champ && champ.champion === null ? 'Press again: new championship' : 'New championship',
+      on: () => settings.mode === 'champ' && newChampConfirm > performance.now() && !!champ && champ.champion === null,
+      act: () => {
+        if (settings.mode === 'champ') {
+          if (champWatching()) { stopWatching(); return; }
+          const inProgress = champ && champ.champion === null;
+          if (inProgress && !(newChampConfirm > performance.now())) {
+            newChampConfirm = performance.now() + 4000;
+            setTimeout(() => { if (!(newChampConfirm > performance.now())) { drawMenu(); renderSettingsPanel(); } }, 4100);
+            return;
+          }
+          newChampConfirm = 0; newChampionship(); return;
+        }
+        if (settings.mode === 'online') netSend({ t: 'newmatch' }); startMatch(); } },
     { t: () => 'Continue', act: () => continueAfterFrame() },
     { t: () => 'Concede', act: () => concedeFrame() },
     { t: () => 'Undo', act: () => { if (!anyMoving()) undo(); } },
   ] },
   { label: 'Championship', btns: [
-    // (while you're watching the final, this button lets you skip to its result instead)
-    { t: () => settings.mode === 'champ' && champWatching() ? 'Skip to the result' : 'New championship', w: 2, act: () => { if (settings.mode === 'champ' && champWatching()) stopWatching(); else newChampionship(); } },
     { t: () => 'Amateur field', on: () => settings.champLevel === 'amateur', act: () => { settings.champLevel = 'amateur'; } },
     { t: () => 'Pro field', on: () => settings.champLevel === 'pro', act: () => { settings.champLevel = 'pro'; } },
+    { t: () => '8 players', on: () => +settings.champSize === 8, act: () => { settings.champSize = 8; } },
+    { t: () => '16 players', on: () => +settings.champSize !== 8, act: () => { settings.champSize = 16; } },
   ] },
   { label: 'Rests', btns: [
     { t: () => 'Off', on: () => !restsOn(), act: () => { settings.rests = 'off'; } },
@@ -4977,10 +4990,6 @@ const playRows = [
   { label: 'Extras', btns: [
 
     { t: () => settings.figure ? "Opponent's hands on" : "Opponent's hands off", on: () => settings.figure, act: () => { settings.figure = !settings.figure; } },
-  ] },
-  { label: 'Champ. format', btns: [
-    { t: () => '8 players', on: () => +settings.champSize === 8, act: () => { settings.champSize = 8; } },
-    { t: () => '16 players', on: () => +settings.champSize !== 8, act: () => { settings.champSize = 16; } },
   ] },
 ];
 const tableRows = [
