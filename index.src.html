@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 119;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 120;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3096,6 +3096,7 @@ function showStats(msg) {
   const frames = match.log.map((f, i) => `Frame ${i + 1}: ${f[0]}–${f[1]}`).join(' · ');
   const buttons = [];
   if (!match.over) buttons.push({ t: `Next frame (frame ${match.frames[0] + match.frames[1] + 1})`, act: () => { setChoice(null); continueAfterFrame(); } });
+  if (!match.over && settings.mode === 'champ' && champWatching()) buttons.push({ t: 'Skip to the result', act: () => { setChoice(null); stopWatching(); } });
   else if (settings.mode === 'champ') {
     const next = champMatch();
     if (next) {
@@ -3451,6 +3452,14 @@ function autoSave(dt) {
   try { localStorage.setItem(SAVE_KEY, text); } catch (e) { /* storage blocked */ }
 }
 function offerResume(sv) {
+  // The final you were watching after being knocked out: carry on watching it, or skip to its result
+  if (sv.mode === 'champ' && champWatching()) {
+    const f = champFinalToWatch();
+    setChoice({ title: 'Carry on watching?', text: `You were watching the final, ${champ.entrants[f.a].name} v ${champ.entrants[f.b].name}: frames ${sv.match.frames[0]}–${sv.match.frames[1]}.`, buttons: [
+      { t: 'Carry on watching', act: () => { setChoice(null); applySave(sv); } },
+      { t: 'Skip to the result', act: () => { setChoice(null); clearSave(); stopWatching(); } }] });
+    return;
+  }
   const opp = sv.game.players[1] ? sv.game.players[1].name : '';
   const vs = sv.mode === 'two' ? 'Player 1 v Player 2' : `against ${opp}`;
   const where = sv.between ? `next up, frame ${sv.match.frames[0] + sv.match.frames[1] + 1}` : `this frame ${sv.game.players[0].score}–${sv.game.players[1].score}`;
@@ -3866,6 +3875,17 @@ function skipFinal() {
   const w = champ.entrants[champ.champion];
   if (w.ai !== null && w.ai !== undefined && w.ai < 24) sayAfter('name' + w.ai, 'ischamp');
   setMessage(`${w.name} won the championship.`);
+}
+// Changed your mind part-way through watching the final: stop it where it is and settle it as if you'd skipped it
+function stopWatching() {
+  if (!champWatching()) return;
+  cancelAI();
+  if (anyMoving()) settleNow();
+  skipFinal();
+  const msg = game.message;
+  startMatch();                                   // (back to an empty table: no championship match is on now)
+  showTrophy(); setMessage(msg);
+  drawMenu(); renderSettingsPanel();
 }
 // The final you watched is over: record it, and crown the champion
 function champRecordFinal(w, msg) {
@@ -4931,7 +4951,8 @@ const playRows = [
     { t: () => 'Undo', act: () => { if (!anyMoving()) undo(); } },
   ] },
   { label: 'Championship', btns: [
-    { t: () => 'New championship', w: 2, act: () => newChampionship() },
+    // (while you're watching the final, this button lets you skip to its result instead)
+    { t: () => settings.mode === 'champ' && champWatching() ? 'Skip to the result' : 'New championship', w: 2, act: () => { if (settings.mode === 'champ' && champWatching()) stopWatching(); else newChampionship(); } },
     { t: () => 'Amateur field', on: () => settings.champLevel === 'amateur', act: () => { settings.champLevel = 'amateur'; } },
     { t: () => 'Pro field', on: () => settings.champLevel === 'pro', act: () => { settings.champLevel = 'pro'; } },
   ] },
@@ -7740,7 +7761,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { breakCallName, champBestOf, champFinalToWatch, watchFinal, skipFinal, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { breakCallName, champBestOf, champFinalToWatch, watchFinal, skipFinal, stopWatching, playRows, cancelAI, champWatching, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
