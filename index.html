@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 124;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 125;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -1763,6 +1763,37 @@ const aisleNear = (x, z, o) => AISLES.some(([ax, az]) => {
   box(0.05, rowH(4), 1.9, new THREE.MeshBasicMaterial({ color: 0x020203 }), STAGE_A + rowO(5) - 0.2, rowH(4) / 2, 0, arena);
   for (const z of [-0.95, 0.95]) box(rowO(5), rowH(4), 0.05, new THREE.MeshBasicMaterial({ color: 0x0c0c0f }), STAGE_A + rowO(5) / 2, rowH(4) / 2, z, arena);
   box(rowO(5), 0.05, 1.9, new THREE.MeshBasicMaterial({ color: 0x0c0c0f }), STAGE_A + rowO(5) / 2, rowH(4), 0, arena);
+  // Inside it, still dark, but with a little light from round the corner at the far end, so the walkway in shows as a
+  // silhouette: the floor and a dark red runner catching the glow, the walls fading into the dark, dim lights low down
+  {
+    const x0 = STAGE_A + 0.02, x1 = STAGE_A + rowO(5) - 0.23, len = x1 - x0, H = rowH(4) - 0.03, Wd = 1.86;
+    const flat = map => new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide });
+    const floorTex = paintTexture(256, 64, (g, w, h) => {
+      let lg = g.createLinearGradient(0, 0, w, 0); lg.addColorStop(0, '#060607'); lg.addColorStop(0.6, '#0e0d0d'); lg.addColorStop(1, '#2c2723');
+      g.fillStyle = lg; g.fillRect(0, 0, w, h);
+      lg = g.createLinearGradient(0, 0, w, 0); lg.addColorStop(0, '#0a0405'); lg.addColorStop(0.6, '#1a0a09'); lg.addColorStop(1, '#4a1d17');
+      g.fillStyle = lg; g.fillRect(0, h * 0.28, w, h * 0.44);
+    });
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(len, Wd).rotateX(-Math.PI / 2), flat(floorTex));
+    floor.position.set(x0 + len / 2, 0.008, 0); arena.add(floor);
+    const wallTex = paintTexture(256, 128, (g, w, h) => {
+      let lg = g.createLinearGradient(0, 0, w, 0); lg.addColorStop(0, '#040405'); lg.addColorStop(0.7, '#0c0b0b'); lg.addColorStop(1, '#221e1b');
+      g.fillStyle = lg; g.fillRect(0, 0, w, h);
+      lg = g.createLinearGradient(0, 0, 0, h); lg.addColorStop(0, 'rgba(0,0,0,0.75)'); lg.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = lg; g.fillRect(0, 0, w, h);
+    });
+    for (const z of [-0.92, 0.92]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(len, H), flat(wallTex)); m.position.set(x0 + len / 2, H / 2, z); arena.add(m); }
+    const backTex = paintTexture(128, 128, (g, w, h) => {
+      g.fillStyle = '#070708'; g.fillRect(0, 0, w, h);
+      const rg = g.createRadialGradient(w * 0.5, h * 0.95, 0, w * 0.5, h * 0.95, w * 0.75);
+      rg.addColorStop(0, 'rgba(92,78,64,1)'); rg.addColorStop(0.5, 'rgba(48,40,34,0.7)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = rg; g.fillRect(0, 0, w, h);
+    });
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(Wd, H), flat(backTex));
+    back.rotation.y = -Math.PI / 2; back.position.set(x1, H / 2, 0); arena.add(back);
+    const lamp = new THREE.MeshBasicMaterial({ color: 0x8a7a66 });
+    for (let x = x0 + 0.6; x < x1 - 0.2; x += 0.75) for (const z of [-0.88, 0.88]) box(0.05, 0.025, 0.03, lamp, x, 0.12, z, arena);
+  }
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(44, 40).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x050507 }));
   ceil.position.y = ARENA_TOP; arena.add(ceil);
   // Little lights scattered over the dark roof
@@ -1843,7 +1874,9 @@ const crowd = (() => {
       const [x, z] = ringAt(p, o);
       if (prev) acc += Math.hypot(x - prev[0], z - prev[1]);
       prev = [x, z];
-      if (acc < 0.56 || inTunnel(p, i) || aisleNear(x, z, o)) continue;
+      // (and nobody sits so close to the players' entrance that they stick out into it: a seated person is half a
+      // metre across, and the entrance's side walls stand where the seats stop)
+      if (acc < 0.56 || inTunnel(p, i) || (p.nx > 0.9 && Math.abs(z) < 1.3 && i < 5) || aisleNear(x, z, o)) continue;
       acc = 0;
       seats.push({ x, z, y: rowH(i), face: Math.atan2(-p.nx, -p.nz), row: i });
     }
