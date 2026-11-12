@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 123;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 124;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -5966,6 +5966,7 @@ const skinMat = patchEnv(new THREE.MeshStandardMaterial({ color: SKIN.medium, ro
 function setSkin() { if (SKIN[settings.hands]) skinMat.color.setHex(SKIN[settings.hands]); }
 setSkin();
 
+const RAIL_POSE = { f: [10, 10, 6], s: [2, 0, 6, 12], t: [-20, -20, 20, 20] };
 class HandRig {
   constructor(gltf, side, mat = skinMat) {
     this.side = side; this.root = gltf.scene; this.root.visible = false; scene.add(this.root);
@@ -6024,6 +6025,11 @@ class HandRig {
     } else if (kind === 'cup') {                          // round a ball, from above
       curl(42, 40, 22, [-6, 0, 5, 10]);
       this.rot('thumb-metacarpal', tA, 5); this.rot('thumb-metacarpal', this.T, -30); this.rot('thumb-phalanx-proximal', tB, 25);
+    } else if (kind === 'rail') {                         // a bridge on the cushion rail: hand flat, the thumb lying
+      const k = (typeof window !== 'undefined' && window.__rail) || RAIL_POSE;   // forward beside the forefinger, the cue between them
+      curl(k.f[0], k.f[1], k.f[2], k.s);
+      this.rot('thumb-metacarpal', tA, k.t[0]); this.rot('thumb-metacarpal', this.T, k.t[1]);
+      this.rot('thumb-phalanx-proximal', tB, k.t[2]); this.rot('thumb-phalanx-distal', tB, k.t[3]);
     } else {
       curl(14, 12, 6, [-9, 0, 7, 15]);
       this.rot('thumb-metacarpal', tA, -68); this.rot('thumb-phalanx-proximal', tB, 8);
@@ -6470,6 +6476,22 @@ function poseOppHands(tip, quat, bridgeTip) {
   // Rest the palm on whatever is underneath: cloth, the top of the cushion rail, or over a ball if there's no
   // way round it. When the cue is high, the palm comes up with it and the fingertips stay down: a raised bridge.
   const base = surfaceAt(lp), under = covers(lp);
+  // On the cushion rail, with the cue running low over it: the hand lies flat on the rail, fingers forward, the thumb
+  // tucked alongside the forefinger, and the cue runs in the groove between them, as players bridge off the cushion
+  if (base > 0 && !under) {
+    // (where along the rail the cue runs about a finger's height above it, so the hand can lie flat under it)
+    let rb = null;
+    for (let dist = 0.32; dist >= 0.08; dist -= 0.01) {                // (the fingers reach some way forward: kept off the ball)
+      const p = from.clone().addScaledVector(dir, -dist), q = p.clone().applyMatrix4(inv);
+      if (!(Math.abs(q.x) < XO - 0.03 && Math.abs(q.z) < ZO - 0.03) || surfaceAt(q) <= 0 || covers(q)) continue;
+      const sc = Math.abs(q.y - surfaceAt(q) - 0.033) + Math.abs(0.24 - dist) * 0.05;
+      if (!rb || sc < rb.sc) rb = { p, q, sc };
+    }
+    opp.dbg = { lift: rb ? rb.q.y - base : null };
+    if (rb && rb.q.y - base < 0.075) { railBridgeHand(br, tip, dir, rb.p, base, inv); return; }
+  }
+  br.setPose('bridge');
+  br.place(br.F, br.N, flat, down, bp);
   const surface = Math.max(base, under ? 2 * R + 0.004 : 0, lp.y - 0.075);
   br.root.updateMatrixWorld(true);
   const palm = new THREE.Vector3();
@@ -6590,6 +6612,86 @@ function poseOppHands(tip, quat, bridgeTip) {
       keepHandOnTop(br, 0.007, true);
     }
   }
+}
+const RAIL_YAW = 0.45;
+function railBridgeHand(br, tip, dir, bp, base, inv) {
+  br.setPose('rail');
+  const down = new THREE.Vector3(0, -1, 0), fwd = new THREE.Vector3(dir.x, 0, dir.z).normalize();
+  br.place(br.F, br.N, fwd, down, bp);
+  const at = n => { br.root.updateMatrixWorld(true); return br.bones[n].getWorldPosition(new THREE.Vector3()); };
+  // Turn the hand so the forefinger points forward and a little out from the cue (the fingers splayed on the rail,
+  // the cue against the side of the forefinger's knuckle)
+  const ix = at('index-finger-tip').sub(at('index-finger-phalanx-proximal')); ix.y = 0; ix.normalize();
+  const q = new THREE.Quaternion().setFromAxisAngle(UP, Math.atan2(ix.clone().cross(fwd).y, ix.dot(fwd)) + RAIL_YAW);
+  br.root.position.sub(bp).applyQuaternion(q).add(bp); br.root.quaternion.premultiply(q);
+  // Slide it sideways so the cue lies in the groove between the thumb and forefinger
+  const g = at('index-finger-phalanx-proximal').add(at('thumb-phalanx-distal')).multiplyScalar(0.5);
+  const onCue = tip.clone().addScaledVector(dir, g.clone().sub(tip).dot(dir)), shift = onCue.sub(g); shift.y = 0;
+  br.root.position.add(shift);
+  // ...and rest the palm on the rail
+  const palm = new THREE.Vector3();
+  for (const n of ['index-finger-metacarpal', 'middle-finger-metacarpal', 'ring-finger-metacarpal', 'pinky-finger-metacarpal']) palm.add(at(n));
+  br.root.position.y += base + 0.015 - palm.multiplyScalar(0.25).applyMatrix4(inv).y;
+  keepHandOnTop(br, 0.007, true);
+  // With the cue higher over the rail, the hand tents up on its fingertips until the cue rests on it
+  {
+    const g = at('index-finger-phalanx-proximal').add(at('thumb-phalanx-distal')).multiplyScalar(0.5);
+    const along = g.clone().sub(tip).dot(dir), cueY = tip.y + dir.y * along, cueR = TIP_R + CUE_TAPER * Math.max(0, -along);
+    const rise = cueY - cueR - (g.y + 0.010);
+    if (rise > 0.003) {
+      const tips = new THREE.Vector3();
+      for (const n of ['index-finger-tip', 'middle-finger-tip', 'ring-finger-tip']) tips.add(at(n));
+      tips.multiplyScalar(1 / 3);
+      const r = Math.abs(g.clone().sub(tips).dot(fwd)), axis = new THREE.Vector3(-fwd.z, 0, fwd.x);
+      const ang = Math.asin(Math.min(0.8, rise / Math.max(0.04, r)));
+      const p0 = br.root.position.clone(), q0 = br.root.quaternion.clone();
+      const tilt = a => { const qq = new THREE.Quaternion().setFromAxisAngle(axis, a); br.root.position.copy(p0).sub(tips).applyQuaternion(qq).add(tips); br.root.quaternion.copy(q0).premultiply(qq); return at('index-finger-phalanx-proximal').y; };
+      const up = tilt(ang), dn = tilt(-ang);
+      if (up > dn) tilt(ang);
+      keepHandOnTop(br, 0.007, true);
+    }
+  }
+  // The cue rests on the thumb and against the side of the forefinger, never in them: slide the hand a little
+  // sideways if that clears it, and failing that lift it the last few millimetres off the rail
+  if (!br.skinPts) {
+    let mesh = null; br.root.traverse(o => { if (o.isSkinnedMesh && !mesh) mesh = o; });
+    const n = mesh ? mesh.geometry.attributes.position.count : 0, step = Math.max(1, Math.floor(n / 300));
+    br.skinPts = { mesh, idx: Array.from({ length: Math.floor(n / step) }, (_, i) => i * step) };
+  }
+  const mesh = br.skinPts.mesh, idx = Array.from({ length: mesh ? mesh.geometry.attributes.position.count >> 1 : 0 }, (_, i) => 2 * i);
+  if (!mesh) return;
+  const into = () => {
+    br.root.updateMatrixWorld(true);
+    const v = new THREE.Vector3(); let worst = 0;
+    for (const i of idx) {
+      mesh.getVertexPosition(i, v); v.applyMatrix4(mesh.matrixWorld);
+      const along = v.clone().sub(tip).dot(dir); if (along > 0) continue;
+      worst = Math.max(worst, TIP_R + CUE_TAPER * -along + 0.002 - v.distanceTo(tip.clone().addScaledVector(dir, along)));
+    }
+    return worst;
+  };
+  // (worked out once for each shot, not every frame as the cue moves back and forth)
+  const line = tip.clone().addScaledVector(dir, -tip.dot(dir));
+  const key = `rail ${line.x.toFixed(3)},${line.y.toFixed(3)},${line.z.toFixed(3)},${dir.x.toFixed(3)},${dir.z.toFixed(3)},${bp.x.toFixed(2)},${bp.z.toFixed(2)}`;
+  const perp = new THREE.Vector3(-dir.z, 0, dir.x).normalize(), p0 = br.root.position.clone();
+  let best = opp.handFix && opp.handFix.key === key ? opp.handFix : null;
+  if (!best) {
+    // (further back along the cue it runs higher over the hand; the hand slides back, or a little to the side)
+    best = { key, sh: 0, bk: 0, h: into() };
+    const cost = (h, bk, sh) => Math.max(0, h) * 100 + bk + Math.abs(sh) * 2;
+    if (best.h > 0) for (const bk of [0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06]) {
+      if (best.h <= 0 && bk >= cost(best.h, best.bk, best.sh)) break;   // (nothing further back can do better)
+      for (let k = 0; k <= 30; k++) {
+        const sh = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.005;
+        if (best.h <= 0 && cost(0, bk, sh) >= cost(best.h, best.bk, best.sh)) break;
+        br.root.position.copy(p0).addScaledVector(perp, sh).addScaledVector(fwd, -bk);
+        const h = into();
+        if (cost(h, bk, sh) < cost(best.h, best.bk, best.sh)) { best.sh = sh; best.bk = bk; best.h = h; }
+      }
+    }
+    opp.handFix = best;
+  }
+  br.root.position.copy(p0).addScaledVector(perp, best.sh).addScaledVector(fwd, -best.bk);
 }
 function updateOpponent(dt) {
   if (!opp.rigs.right) return;
@@ -7775,7 +7877,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { breakCallName, champBestOf, champFinalToWatch, watchFinal, skipFinal, stopWatching, playRows, cancelAI, champWatching, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { toTable, fromTable, breakCallName, champBestOf, champFinalToWatch, watchFinal, skipFinal, stopWatching, playRows, cancelAI, champWatching, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
