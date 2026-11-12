@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 120;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 121;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3849,7 +3849,7 @@ function newChampionship() {
   saveChamp();
   settings.mode = 'champ'; saveSettings();
   startMatch();
-  setMessage(`${roundName(0)} against ${game.players[1].name}. You break.`);
+  setMessage(`${roundName(0)} against ${game.players[1].name}. The toss decides who breaks.`);
   renderDraw();
 }
 
@@ -4945,7 +4945,11 @@ const playRows = [
     { t: () => game.nominated ? `Nominated: ${cap(game.nominated.name)}` : 'Nominate a colour', act: () => askNomination(false) },
   ] },
   { label: 'Frame', btns: [
-    { t: () => 'New match', act: () => { if (settings.mode === 'champ') { champ && (champ.curFrames = [0, 0]); } if (settings.mode === 'online') netSend({ t: 'newmatch' }); startMatch(); } },
+    { t: () => 'New match', act: () => {
+      // (in the championship with nothing left to play, because it's over or was never started, there's no
+      // opponent to play: start a new championship rather than leave you at the table against an empty seat)
+      if (settings.mode === 'champ' && !champLive()) { newChampionship(); return; }
+      if (settings.mode === 'champ') { champ && (champ.curFrames = [0, 0]); } if (settings.mode === 'online') netSend({ t: 'newmatch' }); startMatch(); } },
     { t: () => 'Continue', act: () => continueAfterFrame() },
     { t: () => 'Concede', act: () => concedeFrame() },
     { t: () => 'Undo', act: () => { if (!anyMoving()) undo(); } },
