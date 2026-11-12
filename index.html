@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 122;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 123;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -3097,7 +3097,7 @@ function showStats(msg) {
   const buttons = [];
   if (!match.over) buttons.push({ t: `Next frame (frame ${match.frames[0] + match.frames[1] + 1})`, act: () => { setChoice(null); continueAfterFrame(); } });
   if (!match.over && settings.mode === 'champ' && champWatching()) buttons.push({ t: 'Skip to the result', act: () => { setChoice(null); stopWatching(); } });
-  else if (settings.mode === 'champ') {
+  else if (settings.mode === 'champ' && match.over) {
     const next = champMatch();
     if (next) {
       const opp = champ.entrants[next.a === champ.you ? next.b : next.a].name;
@@ -3110,7 +3110,7 @@ function showStats(msg) {
       buttons.push({ t: 'See the championship draw', act: () => { setChoice(null); if (renderer.xr.isPresenting) { menuPage = 'draw'; toggleMenu(true); } else showPane('draw'); } });
       buttons.push({ t: 'New championship', act: () => { setChoice(null); newChampionship(); } });
     }
-  } else buttons.push({ t: 'Play another match', act: () => { setChoice(null); continueAfterFrame(); } });
+  } else if (match.over) buttons.push({ t: 'Play another match', act: () => { setChoice(null); continueAfterFrame(); } });
   buttons.push({ t: 'Close and look at the table', act: () => setChoice(null) });
   setChoice({ title: match.over ? (multi ? 'Match statistics' : 'Frame statistics') : `End of frame ${match.log.length}`, text: msg, stats: { names: [a.name, b.name], rows, frames: multi ? frames : '' }, buttons });
 }
@@ -4936,9 +4936,10 @@ const playRows = [
     { t: () => 'Coaching', on: () => settings.mode === 'coach', act: () => setMode('coach') },
   ] },
   { label: 'Opponent', btns: [
-    { t: () => '−', act: () => { settings.opponent = Math.max(0, settings.opponent - 1); freshRestart(); } },
-    { t: () => `${AI_PLAYERS[settings.opponent].name} · ${AI_PLAYERS[settings.opponent].title}`, val: true, w: 4 },
-    { t: () => '+', act: () => { settings.opponent = Math.min(AI_PLAYERS.length - 1, settings.opponent + 1); freshRestart(); } },
+    { t: () => '−', act: () => { if (settings.mode === 'champ') return; settings.opponent = Math.max(0, settings.opponent - 1); freshRestart(); } },
+    { t: () => settings.mode === 'champ' ? `${game.players[1] ? game.players[1].name : '—'} · from the draw`
+        : `${AI_PLAYERS[settings.opponent].name} · ${AI_PLAYERS[settings.opponent].title}`, val: true, w: 4 },
+    { t: () => '+', act: () => { if (settings.mode === 'champ') return; settings.opponent = Math.min(AI_PLAYERS.length - 1, settings.opponent + 1); freshRestart(); } },
   ] },
   { label: 'Match length', btns: [1, 3, 5, 7].map(n => ({ t: () => `Best of ${n}`, on: () => +settings.bestOf === n, act: () => { settings.bestOf = n; } })) },
   { label: 'Reds', btns: [15, 10, 6].map(n => ({ t: () => `${n} reds`, on: () => +settings.reds === n, act: () => { settings.reds = n; } })) },
