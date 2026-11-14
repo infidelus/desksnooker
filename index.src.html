@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 127;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 128;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4807,7 +4807,7 @@ function placeCueBehindBall(c, dirX, dirZ, gap, side, height, elev = 0) {
   }
   // The computer bridging on the cushion rail: the hand lying on the rail raises the cue, which runs between its thumb
   // and forefinger a little above the wood, so the cue rises at least that much from the ball to the hand
-  const clothRoom = Math.abs(cueBall.x - dirX * (0.27 + R)) < L / 2 - 0.01 && Math.abs(cueBall.z - dirZ * (0.27 + R)) < W / 2 - 0.01;   // (the whole hand on the cloth)
+  const clothRoom = Math.abs(cueBall.x - dirX * (0.41 + R)) < L / 2 - 0.03 && Math.abs(cueBall.z - dirZ * (0.41 + R)) < W / 2 - 0.03;   // (the whole hand on the cloth)
   if (c === aiCue && restKind === 'none' && !clothRoom) {
     const cy = R + height * R;
     for (let d = 0.10; d <= 0.30; d += 0.02) {                         // (the nearest spot on the rail: a short bridge, the butt well up)
@@ -6528,7 +6528,7 @@ function poseOppHands(tip, quat, bridgeTip) {
     // Score each spot: a ball under the hand is worst, then the cue riding high above it, then a short bridge
     // (and a bridge on the cloth, if there's room for one, rather than reaching back to the rail)
     const score = (covers(q) ? 10 : 0) + Math.max(0, q.y - surfaceAt(q) - 0.06) * 20 + Math.abs(0.28 - dist) * 0.5 + (surfaceAt(q) > 0 ? 0.1 : 0)
-      + (surfaceAt(q) === 0 && surfaceAt(from.clone().addScaledVector(dir, -dist - 0.1).applyMatrix4(inv)) > 0 ? 0.25 : 0);   // (wrist and all)
+      + (surfaceAt(q) === 0 && surfaceAt(from.clone().addScaledVector(dir, -dist - 0.14).applyMatrix4(inv)) > 0 ? 0.25 : 0);   // (wrist and all)
     if (!best || score < best.score) best = { p, q, score };
   }
   if (best) { bp = best.p; lp = best.q; } else { bp = from.clone().addScaledVector(dir, -0.06); lp = bp.clone().applyMatrix4(inv); }
