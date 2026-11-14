@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 126;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 127;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4817,6 +4817,18 @@ function placeCueBehindBall(c, dirX, dirZ, gap, side, height, elev = 0) {
         break;
       }
     }
+  }
+  // ...and with a ball wherever its bridge hand could go on the cloth, it bridges over the ball: the butt comes up so
+  // the cue runs above the hand resting on top of it
+  if (c === aiCue && restKind === 'none' && clothRoom) {
+    const cy = R + height * R;
+    let free = false;
+    for (let d = 0.12; d <= 0.32 && !free; d += 0.02) {
+      const px = cueBall.x - dirX * (d + R), pz = cueBall.z - dirZ * (d + R);
+      if (Math.abs(px) > L / 2 - 0.06 || Math.abs(pz) > W / 2 - 0.06) break;
+      free = !balls.some(b => b !== cueBall && b.onTable && !b.falling && Math.hypot(b.x - px, b.z - pz) < R + 0.07);
+    }
+    if (!free) e = Math.min(0.6, Math.max(e, Math.atan2(2 * R + 0.09 - cy, 0.2 + R)));
   }
   const f = Math.sqrt(Math.max(0, 1 - side * side - height * height));
   const d3 = new THREE.Vector3(dirX * Math.cos(e), -Math.sin(e), dirZ * Math.cos(e));
