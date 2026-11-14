@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 128;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 129;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -4828,7 +4828,13 @@ function placeCueBehindBall(c, dirX, dirZ, gap, side, height, elev = 0) {
       if (Math.abs(px) > L / 2 - 0.06 || Math.abs(pz) > W / 2 - 0.06) break;
       free = !balls.some(b => b !== cueBall && b.onTable && !b.falling && Math.hypot(b.x - px, b.z - pz) < R + 0.07);
     }
-    if (!free) e = Math.min(0.6, Math.max(e, Math.atan2(2 * R + 0.09 - cy, 0.2 + R)));
+    // (and the same if the spread fingers would reach up on to a cushion beside it, lifting the hand)
+    const onCloth = (d, side) => {
+      const x = cueBall.x - dirX * (d + R) + dirZ * side, z = cueBall.z - dirZ * (d + R) - dirX * side;
+      return Math.abs(x) < L / 2 - 0.01 && Math.abs(z) < W / 2 - 0.01;
+    };
+    const fits = [0.18, 0.28].every(d => onCloth(d, 0.12) && onCloth(d, -0.05));
+    if (!free || !fits) e = Math.min(0.6, Math.max(e, Math.atan2(2 * R + 0.09 - cy, 0.2 + R)));
   }
   const f = Math.sqrt(Math.max(0, 1 - side * side - height * height));
   const d3 = new THREE.Vector3(dirX * Math.cos(e), -Math.sin(e), dirZ * Math.cos(e));
@@ -6590,6 +6596,7 @@ function poseOppHands(tip, quat, bridgeTip) {
       br.root.quaternion.premultiply(q);
     }
   }
+  const yFree = br.root.position.y;                     // (its height before anything under it lifted it)
   keepHandOnTop(br, 0.007, true);
   // Last of all: nothing of the hand but the V may touch the cue. With the hand tipped forward, its heel and wrist
   // come up, and if they're in line with the cue it runs through them: turn the hand about the V until they're clear.
@@ -6651,7 +6658,12 @@ function poseOppHands(tip, quat, bridgeTip) {
     let fix = opp.handFix && opp.handFix.key === key ? opp.handFix : null;
     const vee = veeAt(), q0 = br.root.quaternion.clone(), p0 = br.root.position.clone();
     const perp = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
-    const apply = (a, sh) => { const q = new THREE.Quaternion().setFromAxisAngle(UP, a); br.root.position.copy(p0).sub(vee).applyQuaternion(q).add(vee).addScaledVector(perp, sh); br.root.quaternion.copy(q0).premultiply(q); };
+    // (each way round it's set down afresh: turned so its fingers come off the cushion, say, it sits lower again)
+    const apply = (a, sh) => {
+      const q = new THREE.Quaternion().setFromAxisAngle(UP, a);
+      br.root.position.copy(p0).sub(vee).applyQuaternion(q).add(vee).addScaledVector(perp, sh); br.root.quaternion.copy(q0).premultiply(q);
+      br.root.position.y = yFree; keepHandOnTop(br, 0.007, true);
+    };
     if (!fix) {
       fix = { key, a: 0, sh: 0 };
       if (cueHits() > 0) {
@@ -6667,10 +6679,8 @@ function poseOppHands(tip, quat, bridgeTip) {
       }
       opp.handFix = fix;
     }
-    if (fix.a || fix.sh) {
-      apply(fix.a, fix.sh);
-      keepHandOnTop(br, 0.007, true);
-    }
+    if (fix.a || fix.sh) apply(fix.a, fix.sh);
+    else { br.root.position.copy(p0); br.root.quaternion.copy(q0); }
   }
 }
 const RAIL_YAW = 0.45;
@@ -6720,7 +6730,7 @@ function railBridgeHand(br, tip, dir, bp, base, inv) {
     const n = mesh ? mesh.geometry.attributes.position.count : 0, step = Math.max(1, Math.floor(n / 300));
     br.skinPts = { mesh, idx: Array.from({ length: Math.floor(n / step) }, (_, i) => i * step) };
   }
-  const mesh = br.skinPts.mesh, idx = Array.from({ length: mesh ? mesh.geometry.attributes.position.count >> 1 : 0 }, (_, i) => 2 * i);
+  const mesh = br.skinPts.mesh, idx = Array.from({ length: mesh ? Math.floor(mesh.geometry.attributes.position.count / 3) : 0 }, (_, i) => 3 * i);
   if (!mesh) return;
   const into = () => {
     br.root.updateMatrixWorld(true);
@@ -6731,6 +6741,13 @@ function railBridgeHand(br, tip, dir, bp, base, inv) {
       if (vee && v.distanceTo(vee) < 0.022) continue;                     // (the V itself cradles the cue)
       const along = v.clone().sub(tip).dot(dir); if (along > 0) continue;
       worst = Math.max(worst, TIP_R + CUE_TAPER * -along + 0.002 - v.distanceTo(tip.clone().addScaledVector(dir, along)));
+    }
+    // ...nor may the wrist sit right under the cue: seen from behind, the cue would seem to go through it. The forearm
+    // comes in from the side.
+    const w = at('wrist'), mm = at('middle-finger-metacarpal'), side = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
+    for (const f of [0, 0.3, 0.6]) {
+      const q = w.clone().addScaledVector(w.clone().sub(mm), f), along = q.clone().sub(tip).dot(dir);
+      worst = Math.max(worst, 0.04 - Math.abs(q.clone().sub(tip.clone().addScaledVector(dir, along)).dot(side)));
     }
     return worst;
   };
@@ -6750,7 +6767,8 @@ function railBridgeHand(br, tip, dir, bp, base, inv) {
     };
     best = { key, a: 0, sh: 0, bk: 0, h: into() };
     const cost = (h, a, bk, sh) => Math.max(0, h) * 100 + bk + Math.abs(sh) * 2 + Math.abs(a) * 0.05;
-    if (best.h > 0) for (const a of [0, 0.15, -0.15, 0.3, -0.3, 0.45, -0.45, 0.6, -0.6]) for (const bk of [0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]) {
+    if (best.h > 0) for (const a of [0, -0.15, -0.3, -0.45, -0.6, -0.75, -0.9, 0.15]) for   // (the forearm off to the left: a left hand)
+      (const bk of [0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]) {
       if (best.h <= 0 && cost(0, a, bk, 0) >= cost(best.h, best.a, best.bk, best.sh)) continue;
       for (let k = 0; k <= 4; k++) {                                   // (only a little: the cue stays between thumb and finger)
         const sh = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.004;
