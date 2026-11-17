@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 129;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 130;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2968,6 +2968,17 @@ function snookeredOnAll(list, ballOn) {
   return true;
 }
 
+// Can any colour be struck full in the face, straight, with no red in the way?
+function colourInView(list) {
+  const cue = list[0], pred = onPredicate('colour'), onBalls = [cue, ...list.filter(b => b.kind !== 'cue' && pred(b))];
+  return list.some(t => t !== cue && t.onTable && !t.falling && pred(t) && (() => {
+    const dx = t.x - cue.x, dz = t.z - cue.z, d = Math.hypot(dx, dz);
+    if (d <= 2 * R + 0.0005) return true;
+    const k = (d - 2 * R) / d;
+    return pathClear(list, cue.x, cue.z, cue.x + dx * k, cue.z + dz * k, onBalls, CLEAR_PATH);
+  })());
+}
+
 // Points still available on the table for the player at the table
 function remainingPoints() {
   const r = redsLeft();
@@ -3772,9 +3783,11 @@ function askNomination(onlyIfSnookered) {
   if (!isMatch() || game.ballOn !== 'colour' || game.frameOver || !cueBall.onTable) return;
   const p = game.players[game.current];
   if (p.ai !== null || p.remote) return;
-  // Snookered as the rules have it: no colour can be hit on both edges without a red in the way
-  // (being able to clip a thin edge of one isn't enough)
-  const snookered = snookeredOnAll(balls, 'colour');
+  // Only when no colour can be hit full in the face, with no red in the way: then it isn't obvious which is being
+  // played, and the referee asks. (Snookered as the rules define it, for a free ball, is stricter: both edges of a colour
+  // clear. A red touching the cue ball's side can block an edge of a colour straight ahead, and with that colour in
+  // plain view the referee wouldn't ask.)
+  const snookered = !colourInView(balls);
   // With the cue ball touching a colour after a red, the rules say the referee must ask which colour you're on
   const touchingColour = cueBall.onTable ? colours.find(b => b.onTable && !b.falling && Math.hypot(b.x - cueBall.x, b.z - cueBall.z) < 2 * R + 0.0005) || null : null;
   if (onlyIfSnookered && !snookered && !touchingColour) return;
@@ -4813,7 +4826,7 @@ function placeCueBehindBall(c, dirX, dirZ, gap, side, height, elev = 0) {
     for (let d = 0.10; d <= 0.30; d += 0.02) {                         // (the nearest spot on the rail: a short bridge, the butt well up)
       const x = cueBall.x - dirX * (d + R), z = cueBall.z - dirZ * (d + R), ax = Math.abs(x), az = Math.abs(z);
       if ((ax > L / 2 + CUSH_W || az > W / 2 + CUSH_W) && ax < L / 2 + CUSH_W + RAIL_W - 0.03 && az < W / 2 + CUSH_W + RAIL_W - 0.03) {
-        e = Math.min(0.6, Math.max(e, Math.atan2(CUSH_H + 0.004 + 0.042 - cy, d + R)));
+        e = Math.min(0.6, Math.max(e, 0.26, Math.atan2(CUSH_H + 0.004 + 0.042 - cy, d + R)));   // (and never too flat: the cue clears the thumb)
         break;
       }
     }
@@ -6738,8 +6751,9 @@ function railBridgeHand(br, tip, dir, bp, base, inv) {
     const vee = RAIL_V ? at('index-finger-phalanx-proximal').add(at(gA)).multiplyScalar(0.5) : null;
     for (const i of idx) {
       mesh.getVertexPosition(i, v); v.applyMatrix4(mesh.matrixWorld);
-      if (vee && v.distanceTo(vee) < 0.022) continue;                     // (the V itself cradles the cue)
       const along = v.clone().sub(tip).dot(dir); if (along > 0) continue;
+      // (the V itself cradles the cue: the skin under the cue there holds it up, but the thumb beside it mustn't go in)
+      if (vee && v.distanceTo(vee) < 0.022 && v.y < tip.y + dir.y * along - 0.002) continue;
       worst = Math.max(worst, TIP_R + CUE_TAPER * -along + 0.002 - v.distanceTo(tip.clone().addScaledVector(dir, along)));
     }
     // ...nor may the wrist sit right under the cue: seen from behind, the cue would seem to go through it. The forearm
@@ -6768,7 +6782,7 @@ function railBridgeHand(br, tip, dir, bp, base, inv) {
     best = { key, a: 0, sh: 0, bk: 0, h: into() };
     const cost = (h, a, bk, sh) => Math.max(0, h) * 100 + bk + Math.abs(sh) * 2 + Math.abs(a) * 0.05;
     if (best.h > 0) for (const a of [0, -0.15, -0.3, -0.45, -0.6, -0.75, -0.9, 0.15]) for   // (the forearm off to the left: a left hand)
-      (const bk of [0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]) {
+      (const bk of [0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.1]) {
       if (best.h <= 0 && cost(0, a, bk, 0) >= cost(best.h, best.a, best.bk, best.sh)) continue;
       for (let k = 0; k <= 4; k++) {                                   // (only a little: the cue stays between thumb and finger)
         const sh = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.004;
@@ -7971,7 +7985,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { toTable, fromTable, breakCallName, champBestOf, champFinalToWatch, watchFinal, skipFinal, stopWatching, playRows, cancelAI, champWatching, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { colourInView, toTable, fromTable, breakCallName, champBestOf, champFinalToWatch, watchFinal, skipFinal, stopWatching, playRows, cancelAI, champWatching, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
