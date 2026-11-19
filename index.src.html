@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 130;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 131;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -6198,10 +6198,10 @@ function updateHands(show, tip, dir, gripPoint, bridgePoint, restHold = null) {
 const BRIDGE_BACK = 0.28;
 // How far a player can reach, measured from the outside edge of the table back along the shot, for a player of
 // this height (cm). Standing behind the cushion and leaning over, a 6 ft player bridges by hand with the cue ball up
-// to about 5 ft from the cushion; beyond that, the rest. Past the middle pockets the cue hand would be too far over the
+// to about 4 ft 8 in from the cushion; beyond that, the rest. Past the middle pockets the cue hand would be too far over the
 // table, so the rest and an extension; and beyond about the pink spot, the long rest with an extended cue.
 function reaches(h) {
-  const bridge = 1.4 * h / 183;
+  const bridge = 1.3 * h / 183;
   return { bridge, cue: bridge + 0.78, ext: bridge + 1.3 };
 }
 // The height of whoever is at the table: you, or the computer player whose turn it is (each has their own)
@@ -6232,11 +6232,32 @@ function edgeBehind(x, z, dirX, dirZ) {
   if (Math.abs(uz) > 1e-9) t = Math.min(t, ((uz > 0 ? hz : -hz) - z) / uz);
   return t;
 }
+// Standing beside the table rather than behind the shot: with the cue running close to an edge, you can stand at that
+// edge and lean along the rail, your cue arm over it and your bridge hand reaching the ball. That works only with the
+// table on your cue-arm side: for a left-hander, an edge to the right of the shot; for a right-hander, to the left. So
+// near a side cushion one of them plays it by hand and the other needs the rest.
+const ALONGSIDE = 0.42;                                  // how far in from the table's outer edge the cue can run
+function playAlongside(cue, dirX, dirZ) {
+  const hand = typeof isAITurn === 'function' && isAITurn() ? 'right' : settings.hand;   // (the computer's players cue right-handed)
+  // (the body stands on the side away from the cue arm: a right-hander's cue is at their right, so they stand to its left)
+  const nx = hand === 'left' ? -dirZ : dirZ, nz = hand === 'left' ? dirX : -dirX;
+  const hx = L / 2 + CUSH_W + RAIL_W, hz = W / 2 + CUSH_W + RAIL_W;
+  for (let d = BRIDGE_BACK; d <= 1.0; d += 0.06) {                   // from the bridge back to the cue hand
+    const x = cue.x - dirX * d, z = cue.z - dirZ * d;
+    if (Math.abs(x) >= hx || Math.abs(z) >= hz) continue;             // (off the table already)
+    let t = Infinity;                                                  // how far to the edge, out to the body's side
+    if (Math.abs(nx) > 1e-9) t = Math.min(t, ((nx > 0 ? hx : -hx) - x) / nx);
+    if (Math.abs(nz) > 1e-9) t = Math.min(t, ((nz > 0 ? hz : -hz) - z) / nz);
+    if (t > ALONGSIDE) return false;
+  }
+  return true;
+}
 function reachNeed(list, cue, dirX, dirZ, height = shooterHeight()) {
   if (!restsOn() || settings.mode === 'coach' || !cue.onTable) return 'none';
   const n = Math.hypot(dirX, dirZ) || 1; dirX /= n; dirZ /= n;
   const back = edgeBehind(cue.x, cue.z, dirX, dirZ), { bridge: REACH, cue: CUE_REACH, ext: EXT_REACH } = reaches(height);
   if (back - BRIDGE_BACK <= REACH) return 'none';                      // your bridge hand reaches the cloth
+  if (playAlongside(cue, dirX, dirZ)) return 'none';                   // or you stand beside the table, cue arm over the rail
   let block = null;                                                    // a ball where the rest's head has to go
   for (const b of list) {
     if (b === cue || !b.onTable || b.falling) continue;
@@ -7985,7 +8006,7 @@ function settleNow() {
 }
 
 // Handy for testing from the browser console
-window.snooker = { colourInView, toTable, fromTable, breakCallName, champBestOf, champFinalToWatch, watchFinal, skipFinal, stopWatching, playRows, cancelAI, champWatching, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
+window.snooker = { playAlongside, colourInView, toTable, fromTable, breakCallName, champBestOf, champFinalToWatch, watchFinal, skipFinal, stopWatching, playRows, cancelAI, champWatching, aiShouldConcede, addHonour, championshipRoll, canShootNow: () => canShoot(), ballInHandNow: () => ballInHand, checkStalemate, samePosition, announceFrame, coinFace, toss, coin, flipCoin, startToss, loadSave, clearSave, applySave, reachNeed, REST_INFO, playerRest, oppRest, coachPanelMesh: coachPanel.mesh, updateCoachPanelPose, buildCue, cueObj: cue, aiCueObj: aiCue, updateBoardPose, board, followCueBall, tableGlide, updateTableGlide, nextShotLine, setXrMode: m => { xrMode = m; }, net, hostOnline, joinOnline, netLeave, isRemoteTurn, setMute, say, sayAfter, showTrophy, hideTrophy, newChampionship, abandonChampionship, BUILD, liftOverEdge, surfaceUnder, pockets, potOptions, railBridge, canHitDirectNow: () => canHitDirect(cloneBalls(balls), game.freeBall ? (b => b.kind !== "cue") : onPredicate(game.ballOn)), initAudio, applause, venue, crowd, arena, room, playableShot, cueClear, desk, drawSpinBall, setMode, exitCoaching, drawCoachPanel, coachCanvas: coachPanel.c, coach, LESSONS, startLesson, nextStep, coachShowMe, coachTip, liveResult, simResult, resetStep, settleNow, desk, setView, launch, askNomination, announceTouching, poseOppHands, placeCueBehindBall, aiCue, oppSkin, setBallInHand: v => { ballInHand = v; }, judge, launch, contactPoint, gauss,
   balls, cueBall, game, match, settings, strikeCueBall, newFrame, startMatch, undo, anyMoving, physicsStep,
   camera, orbit, table, scene, ai, aiThink, potOptions, simulate, cloneBalls, onPredicate, continueAfterFrame,
   hands, updateHeadsetCue, cueState, placeRest, viewOfBallsOn, referee, refereeBusy, fromTable,
