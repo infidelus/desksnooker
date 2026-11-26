@@ -355,7 +355,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 131;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 132;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2726,6 +2726,28 @@ function aimedColour(dirX, dirZ) {
 }
 
 // Live strike of the cue ball
+// ---------- Counting visitors ----------
+// GoatCounter: counts visits and a few anonymous events, with no cookies and nothing that identifies anyone. Only on
+// the published site (not a downloaded copy or a preview elsewhere), and the game works the same if it's blocked.
+const COUNTING = location.hostname === 'infidelus.github.io';
+if (COUNTING) {
+  const gc = document.createElement('script');
+  gc.async = true; gc.src = 'https://gc.zgo.at/count.js';
+  gc.dataset.goatcounter = 'https://desksnooker.goatcounter.com/count';
+  document.head.appendChild(gc);
+}
+const counted = new Set();
+// Each event once per visit, so the numbers are people who did it rather than how often
+function countEvent(path, title) {
+  if (!COUNTING || counted.has(path)) return;
+  try { if (window.goatcounter && window.goatcounter.count) { window.goatcounter.count({ path, title, event: true }); counted.add(path); } } catch (e) { /* blocked: no matter */ }
+}
+const PLAY_NAMES = { practice: 'Practice', two: '2 players', ai: 'Vs computer', champ: 'Championship', coach: 'Coaching', online: 'Online' };
+function countPlay() {
+  countEvent('played', 'Played a shot');
+  countEvent(`played-${settings.mode}`, `Played a shot: ${PLAY_NAMES[settings.mode] || settings.mode}`);
+}
+
 function strikeCueBall(dirX, dirZ, speed, r, elev = 0) {
   if (!canShoot(true) && !net.applying) return false;
   const pre = balls.map(b => [b.x, b.z, b.onTable]);
@@ -5349,6 +5371,7 @@ async function startXR(mode) {
     renderer.xr.setFramebufferScaleFactor(1.5);   // sharper image than the browser default
     renderer.xr.setReferenceSpaceType('local-floor');
     await renderer.xr.setSession(session);
+    countEvent(mode === 'immersive-ar' ? 'headset-passthrough' : 'headset-vr', mode === 'immersive-ar' ? 'Played in a headset (passthrough)' : 'Played in a headset (VR)');
     xrMode = mode; needPlacement = true; xrFrames = 0; arActive = mode === 'immersive-ar';
     scene.background = mode === 'immersive-ar' ? null : new THREE.Color(0x1b2220);
     renderer.setClearColor(0x000000, 0);
@@ -5834,6 +5857,7 @@ function updateHeadsetCue(dt, now) {
         // Butt raised = positive. The first 5° is a normal cueing angle and adds no swerve.
         const elev = Math.max(0, Math.asin(Math.max(-1, Math.min(1, -dirLocal.y))) - 5 * Math.PI / 180);
         if (strikeCueBall(dhx, dhz, speed, r, elev)) {
+          countPlay();
           pulse(cueHand, Math.min(1, 0.25 + speed / 5), 30 + speed * 8);
           cueState.cooldown = 0.5;
         }
@@ -7482,6 +7506,7 @@ function mouseTablePoint() {
 function deskStrike(speed) {
   const [ax, az] = aimDir();
   if (strikeCueBall(ax, az, speed, contactPoint(ax, az, desk.tipX * 0.5, desk.tipY * 0.5), desk.elev * Math.PI / 180)) {
+    countPlay();
     desk.tipX = desk.tipY = 0; desk.elev = 0; drawSpinBall();   // back to a level, centre-ball hit for the next shot
   }
 }

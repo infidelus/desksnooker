@@ -36,6 +36,10 @@ python3 build.py
 
 This reads `index.src.html`, embeds each `@@ASSET:name@@` file from `assets/` and writes `index.html`.
 
+## Privacy
+
+The published game at infidelus.github.io counts visits with [GoatCounter](https://www.goatcounter.com/), which uses no cookies and stores nothing that identifies anyone. Besides visits it records a few anonymous events, each at most once per visit: that a shot was played (and in which mode), and that the game was played in a headset. Nothing is counted when you run a downloaded copy, and the game works the same if a blocker stops the counter. Your settings and saved games stay in your own browser's local storage.
+
 ## Credits
 
 - [three.js](https://threejs.org/) for 3D rendering.
