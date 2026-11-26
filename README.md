@@ -19,6 +19,8 @@ A realistic snooker game for the Meta Quest 3 that runs straight from the browse
 
 Open the link (or `index.html`) in the Quest browser and choose **Play in passthrough** (or full VR). On a computer, open it in any modern browser and play with the mouse and keyboard. The controls are listed in the panel on the page.
 
+In Vivaldi, or any browser with mouse gestures turned on, dragging with the right button (which turns the view round the table) is taken as a gesture and can send you back a page. Turn gestures off: in Vivaldi, Settings → Mouse, untick Allow Gestures, Allow Rocker Gestures and Tab Cycling with mouse wheel.
+
 ## Files
 
 | File | What it is |
@@ -38,7 +40,7 @@ This reads `index.src.html`, embeds each `@@ASSET:name@@` file from `assets/` an
 
 ## Privacy
 
-The published game at infidelus.github.io counts visits with [GoatCounter](https://www.goatcounter.com/), which uses no cookies and stores nothing that identifies anyone. Besides visits it records a few anonymous events, each at most once per visit: that a shot was played (and in which mode), and that the game was played in a headset. Nothing is counted when you run a downloaded copy, and the game works the same if a blocker stops the counter. Your settings and saved games stay in your own browser's local storage.
+The published game at infidelus.github.io counts visits with [GoatCounter](https://www.goatcounter.com/), which uses no cookies and stores nothing that identifies anyone. Besides visits it records a few anonymous events, each at most once per visit: that a shot was played (and in which mode), and that the game was played in a headset. Nothing is counted when you run a downloaded copy, and the game works the same if a blocker (an ad blocker, or a network one such as Pi-hole) stops the counter. Your settings and saved games stay in your own browser's local storage.
 
 ## Credits
 

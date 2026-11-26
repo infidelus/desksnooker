@@ -195,7 +195,7 @@
     <h2>Quest controls</h2>
     <dl>
       <dt>Cue trigger</dt><dd>Hold to lock the cue on its line, then stroke through</dd>
-      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand holds it and it points where your hand points, coming out raised (hold the grip button to slide your hand along it while it's raised). Tip your wrist down to set its head on the cloth behind the cue ball, then bring your cue to the top of the head: it settles in with a buzz and you can cue (point well away to take it out). With Headset rest set to Cue in rest, the cue is always lined up through the head instead. Once down, it moves as a stick in your fist would, sliding over the cloth: move your arm forwards, back or to the side and the rest goes with it, turn your hand to swing the head round; tilt your wrist up slightly to lift the head a touch, or further to lift it clear. For a rest shot the table glides round to put you at the cushion. Your cue hand plays the shot. When you need one depends on your height (Settings): at 6 ft you'll bridge by hand, leaning over from behind the cushion, until the cue ball is about 5 ft from that cushion. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
+      <dt>Rests</dt><dd>With Rests on (Play tab), a shot your bridge hand couldn't reach is played on the rest: your bridge hand holds it and it points where your hand points, coming out raised (hold the grip button to slide your hand along it while it's raised). Tip your wrist down to set its head on the cloth behind the cue ball, then bring your cue to the top of the head: it settles in with a buzz and you can cue (point well away to take it out). With Headset rest set to Cue in rest, the cue is always lined up through the head instead. Once down, it moves as a stick in your fist would, sliding over the cloth: move your arm forwards, back or to the side and the rest goes with it, turn your hand to swing the head round; tilt your wrist up slightly to lift the head a touch, or further to lift it clear. For a rest shot the table glides round to put you at the cushion. Your cue hand plays the shot. When you need one depends on your height (Settings): at 6 ft you'll bridge by hand, leaning over from behind the cushion, until the cue ball is about 4 ft 8 in from that cushion. Along a side cushion you can stand beside the table instead, if it's on your cue-arm side (see Cue hand), and then you won't need the rest. Rest, extension, long rest, spider and swan are chosen for you; with Guided, shots on them are harder</dd>
       <dt>Trigger + left stick</dt><dd>While the cue is locked, push left or right to fine-tune the aim (a gentle push for the smallest changes; a tick every 0.1°)</dd>
       <dt>Left stick</dt><dd>Slide the table around</dd>
       <dt>Right stick</dt><dd>Left/right rotates the table round you</dd>
@@ -224,6 +224,7 @@
       <dt>Z / N / G / C</dt><dd>Undo · new frame · aiming guide · continue</dd>
       <dt>H</dt><dd>Coach: a tip in practice, or Show me in a lesson</dd>
     </dl>
+    <p class="note">In Vivaldi (and other browsers with mouse gestures), holding the right button and moving the mouse is read as a gesture, so turning the view can send you back a page. Turn gestures off for the game: in Vivaldi, Settings → Mouse, untick Allow Gestures (and Allow Rocker Gestures and Tab Cycling with mouse wheel).</p>
   </section>
 </div>
 
@@ -355,7 +356,7 @@ if (!settings.venues) { if (settings.room === 'club') settings.room = 'auto'; se
 if (settings.coachVoice === true) settings.coachVoice = 'male'; else if (settings.coachVoice === false) settings.coachVoice = 'off';
 function saveSettings() { try { localStorage.setItem('desk-snooker', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const pocketSize = () => POCKETS[settings.pockets] || POCKETS.standard;
-const BUILD = 132;     // shown under the title, so it's easy to check the latest version has loaded
+const BUILD = 133;     // shown under the title, so it's easy to check the latest version has loaded
 { const el = document.getElementById('build'); if (el) el.textContent = `Build ${BUILD}`; }
 
 let champ = null;
@@ -2729,18 +2730,21 @@ function aimedColour(dirX, dirZ) {
 // ---------- Counting visitors ----------
 // GoatCounter: counts visits and a few anonymous events, with no cookies and nothing that identifies anyone. Only on
 // the published site (not a downloaded copy or a preview elsewhere), and the game works the same if it's blocked.
-const COUNTING = location.hostname === 'infidelus.github.io';
-if (COUNTING) {
-  const gc = document.createElement('script');
-  gc.async = true; gc.src = 'https://gc.zgo.at/count.js';
-  gc.dataset.goatcounter = 'https://desksnooker.goatcounter.com/count';
-  document.head.appendChild(gc);
-}
+// The game sends each count itself, straight to the site's counter, rather than loading GoatCounter's script from
+// another address first: one less thing for a blocker to stop.
+const COUNTING = location.hostname === 'infidelus.github.io' && document.visibilityState !== 'prerender';
 const counted = new Set();
+function sendCount(params) {
+  const q = new URLSearchParams({ ...params, s: `${screen.width},${screen.height},${Math.round(devicePixelRatio || 1)}`, rnd: Math.random().toString(36).slice(2, 7) });
+  if (navigator.webdriver) q.set('b', '150');                          // (an automated browser: GoatCounter leaves it out)
+  const url = 'https://desksnooker.goatcounter.com/count?' + q;
+  try { if (!(navigator.sendBeacon && navigator.sendBeacon(url))) new Image().src = url; } catch (e) { /* blocked: no matter */ }
+}
+if (COUNTING) sendCount({ p: location.pathname, t: document.title, r: document.referrer });
 // Each event once per visit, so the numbers are people who did it rather than how often
 function countEvent(path, title) {
   if (!COUNTING || counted.has(path)) return;
-  try { if (window.goatcounter && window.goatcounter.count) { window.goatcounter.count({ path, title, event: true }); counted.add(path); } } catch (e) { /* blocked: no matter */ }
+  counted.add(path); sendCount({ p: path, t: title, e: 'true' });
 }
 const PLAY_NAMES = { practice: 'Practice', two: '2 players', ai: 'Vs computer', champ: 'Championship', coach: 'Coaching', online: 'Online' };
 function countPlay() {
